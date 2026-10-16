@@ -1,0 +1,151 @@
+import path from 'node:path';
+import { stat } from 'node:fs/promises';
+import { tool, type Tool, type ToolSet } from 'ai';
+import { z } from 'zod';
+import type { AgentConfig, Skill } from './types.js';
+import { loadSkill } from './skills.js';
+import { runCommand } from './process.js';
+import { getExecutionContext, runWithExecutionContext, type Workspace } from './workspace.js';
+
+const executing = new WeakMap<AbortSignal, Set<Promise<unknown>>>();
+function trackExecution<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  const pending = executing.get(signal) ?? new Set<Promise<unknown>>();
+  executing.set(signal, pending);
+  pending.add(promise);
+  const settled = () => {
+    pending.delete(promise);
+    if (!pending.size) executing.delete(signal);
+  };
+  void promise.then(settled, settled);
+  return promise;
+}
+
+/** The SDK can stop its stream before an aborted tool finishes cleanup. */
+export async function waitForToolExecutions(signal: AbortSignal): Promise<void> {
+  for (;;) {
+    const pending = executing.get(signal);
+    if (!pending?.size) return;
+    await Promise.allSettled([...pending]);
+  }
+}
+
+function assertOutputSize(value: unknown, maxBytes: number): void {
+  let serialized: string | undefined;
+  try { serialized = typeof value === 'string' ? value : JSON.stringify(value); }
+  catch { throw new Error('Tool output must be serializable.'); }
+  if (serialized !== undefined && Buffer.byteLength(serialized) > maxBytes) {
+    throw new Error(`Tool output exceeded ${maxBytes} bytes.`);
+  }
+}
+
+function limitTool(native: Tool, maxBytes: number): Tool {
+  if (!native.execute) return native;
+  const execute = native.execute;
+  return {
+    ...native,
+    execute(input, options) {
+      const context = getExecutionContext();
+      const signals = [context?.signal, options.abortSignal].filter((signal): signal is AbortSignal => Boolean(signal));
+      const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+      const ownerSignal = context?.signal ?? signal;
+      signal?.throwIfAborted();
+      const result = runWithExecutionContext({ ...context, signal }, () => execute(input, { ...options, abortSignal: signal }));
+      if (result && typeof result === 'object' && Symbol.asyncIterator in result) {
+        return (async function* () {
+          const iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+          let finish!: () => void;
+          trackExecution(new Promise<void>(resolve => { finish = resolve; }), ownerSignal);
+          try {
+            for (;;) {
+              signal?.throwIfAborted();
+              const next = await runWithExecutionContext({ ...context, signal }, () => iterator.next());
+              if (next.done) return;
+              signal?.throwIfAborted();
+              assertOutputSize(next.value, maxBytes);
+              yield next.value;
+            }
+          } finally {
+            try {
+              if (iterator.return) await runWithExecutionContext({ ...context, signal }, () => iterator.return!());
+            } finally { finish(); }
+          }
+        })();
+      }
+      return trackExecution(Promise.resolve(result).then(value => {
+        signal?.throwIfAborted();
+        assertOutputSize(value, maxBytes);
+        return value;
+      }), ownerSignal);
+    },
+  } as Tool;
+}
+
+/** Native tools stay native; wrappers provide cancellation/output accounting. */
+export function createTools(workspace: Workspace, config: AgentConfig, skills: readonly Skill[] = [], mcpTools: ToolSet = {}): ToolSet {
+  const maxBytes = config.limits?.maxToolOutputBytes ?? 1_048_576;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('maxToolOutputBytes must be a positive safe integer.');
+  const tools: ToolSet = Object.create(null) as ToolSet;
+  const register = (name: string, native: Tool) => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/u.test(name)) throw new Error(`Invalid tool name: ${name}`);
+    if (Object.hasOwn(tools, name)) throw new Error(`Duplicate tool name: ${name}`);
+    if (!native || typeof native !== 'object' || !('inputSchema' in native)) throw new Error(`Tool ${name} must be a native AI SDK tool.`);
+    tools[name] = limitTool(native, maxBytes);
+  };
+  register('readFile', tool({
+    description: 'Read a UTF-8 text file inside the project workspace.',
+    inputSchema: z.object({ path: z.string().min(1) }),
+    execute: ({ path: file }) => workspace.read(file, maxBytes),
+  }));
+  register('writeFile', tool({
+    description: 'Write a UTF-8 file inside the project. Put task deliverables in AGENT_OUTPUT_DIR; agent metadata and run records are protected.',
+    inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
+    execute: async ({ path: file, content }, { abortSignal }) => {
+      abortSignal?.throwIfAborted();
+      if (Buffer.byteLength(content) > maxBytes) throw new Error(`File content exceeded ${maxBytes} bytes.`);
+      await workspace.write(file, content);
+      return { path: file, bytes: Buffer.byteLength(content) };
+    },
+  }));
+  register('listFiles', tool({
+    description: 'List immediate files and directories inside the project workspace.',
+    inputSchema: z.object({ path: z.string().default('.') }),
+    execute: ({ path: directory }) => workspace.list(directory),
+  }));
+  register('loadSkill', tool({
+    description: 'Load full instructions for a skill listed in the system prompt. Read referenced files only when needed.',
+    inputSchema: z.object({ name: z.string().min(1) }),
+    execute: ({ name }) => loadSkill(workspace, skills, name, maxBytes),
+  }));
+  if (config.python && Object.keys(config.python.scripts).length) {
+    const scripts = config.python.scripts;
+    register('runPython', tool({
+      description: `Run an explicitly registered, trusted Python script with argv. Scripts: ${Object.entries(scripts).map(([name, script]) => `${name}: ${script.description}`).join('; ')}. Uses project cwd and AGENT_ROOT/AGENT_RUN_DIR/AGENT_OUTPUT_DIR environment variables.`,
+      inputSchema: z.object({ script: z.string().min(1), args: z.array(z.string()).max(256).default([]) }),
+      execute: async ({ script: name, args }, { abortSignal }) => {
+        if (!Object.hasOwn(scripts, name)) throw new Error(`Unknown Python script: ${name}`);
+        if (args.some(arg => arg.includes('\0')) || args.reduce((total, arg) => total + Buffer.byteLength(arg), 0) > 65_536) {
+          throw new Error('Python argv exceeds its limit or contains NUL bytes.');
+        }
+        const script = scripts[name];
+        const scriptPath = await workspace.resolve(script.path);
+        if (!scriptPath.endsWith('.py') || !(await stat(scriptPath)).isFile()) throw new Error('Registered Python path must be a regular .py file inside the project.');
+        const context = getExecutionContext();
+        const outputDirectory = context?.outputDirectory ? await workspace.resolve(context.outputDirectory) : '';
+        const runDirectory = outputDirectory ? path.dirname(outputDirectory) : '';
+        return runCommand(config.python?.command ?? 'python3', [...(config.python?.args ?? []), scriptPath, ...args], {
+          cwd: workspace.root,
+          env: { AGENT_ROOT: workspace.root, AGENT_RUN_ID: context?.runId ?? '', AGENT_RUN_DIR: runDirectory, AGENT_OUTPUT_DIR: outputDirectory },
+          signal: abortSignal,
+          timeoutMs: script.timeoutMs ?? config.limits?.timeoutMs ?? 120_000,
+          // Reserve enough room for the result envelope; limitTool verifies the
+          // exact serialized result as well as this raw stdout/stderr ceiling.
+          maxOutputBytes: maxBytes,
+        });
+      },
+    }));
+  }
+  for (const [name, native] of Object.entries(config.tools ?? {})) register(name, native);
+  for (const [name, native] of Object.entries(mcpTools)) register(name, native);
+  return tools;
+}

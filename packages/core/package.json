@@ -1,0 +1,44 @@
+{
+  "name": "lab-agent-core-vercel",
+  "version": "0.1.0-rc.1",
+  "description": "Composable scientific Agents with AI SDK, persistent sessions, Python tools and independent delivery checks",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "lab-agent": "dist/cli.js",
+    "create-lab-agent": "dist/create.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "workbench",
+    "README.md",
+    "LICENSE",
+    "docs",
+    "examples"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "node ../../scripts/prepare-package.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.81",
+    "@ai-sdk/mcp": "2.0.77",
+    "@ai-sdk/openai": "4.0.95",
+    "@ai-sdk/tui": "1.0.143",
+    "ai": "7.0.142",
+    "jiti": "2.7.0",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  }
+}

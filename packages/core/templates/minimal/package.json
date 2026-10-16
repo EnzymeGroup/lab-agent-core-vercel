@@ -1,0 +1,1 @@
+{"name":"my-lab-agent","version":"1.0.0","private":true,"type":"module","scripts":{"run":"python3 workflows/run.py"},"dependencies":{"lab-agent-core-vercel":"0.1.0-rc.1","ai":"7.0.142","zod":"4.6.7"}}
