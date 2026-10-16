@@ -31,6 +31,7 @@ export interface AgentState {
   skills: Skill[];
   tools: string[];
   toolDetails?: Array<{ name: string; description: string; inputSchema: unknown }>;
+  pythonScripts?: Array<{ name: string; description: string; modes: Array<'chat' | 'task'> }>;
   mcp?: Array<{ name: string; transport: string; optional: boolean; status: 'connected' | 'unavailable'; error?: string }>;
   fileAccess?: { mode?: 'analysis' | 'development'; readRoots?: string[]; writeRoots?: string[] };
   sessions: SessionSummary[];

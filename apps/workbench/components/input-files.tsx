@@ -53,7 +53,7 @@ export default function InputFiles({ token, busy, onUse }: { token: string; busy
   }
 
   return <details className="input-files"><summary>Input files <span>{listing?.files.length ?? 0}</span></summary><section className="input-file-body" aria-label="Input files">
-    <p>Import a file into this project, then add its path to your message. Importing never starts a task.</p>
+    <p>Import a file into this project. Use for task inserts its path and binds it as a task input. Nothing is sent automatically.</p>
     <label htmlFor="input-file-picker">Choose an input file</label><input id="input-file-picker" ref={input} type="file" accept={listing?.extensions.join(',')} disabled={!listing || busy || importing} onChange={event => choose(event.target.files?.[0])} aria-describedby="input-file-limits" />
     <p id="input-file-limits" className="file-limits">{listing ? `Up to ${formatBytes(listing.maxBytes)}. ${listing.extensions.join(', ')}` : 'Loading accepted file types…'}</p>
     {file && <p className="selected-input">{file.name} · {formatBytes(file.size)}</p>}
@@ -61,6 +61,6 @@ export default function InputFiles({ token, busy, onUse }: { token: string; busy
     {busy && <p className="section-note">An operation is active. Import files after it finishes.</p>}
     {error && <div className="input-error" role="alert"><p>{error}</p>{!listing && <button onClick={() => { void refresh(); }}>Retry loading files</button>}</div>}
     {notice && <p className="input-notice" role="status">{notice}</p>}
-    {listing?.files.length ? <ul className="uploaded-files">{listing.files.map(item => <li key={item.path}><strong>{item.name}</strong><span className="input-file-meta">{formatBytes(item.bytes)} · <time dateTime={item.importedAt}>{formatDate(item.importedAt)}</time></span><code className="input-path" tabIndex={0}>{item.path}</code><div className="input-actions"><button onClick={() => { void copy(item.path); }} aria-label={`Copy path for ${item.name}`}>Copy path</button><button onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Use ${item.name} in message`}>Use in message</button></div><details className="input-integrity"><summary>SHA-256</summary><code>{item.sha256}</code></details></li>)}</ul> : listing && <p className="section-note">No imported input files yet.</p>}
+    {listing?.files.length ? <ul className="uploaded-files">{listing.files.map(item => <li key={item.path}><strong>{item.name}</strong><span className="input-file-meta">{formatBytes(item.bytes)} · <time dateTime={item.importedAt}>{formatDate(item.importedAt)}</time></span><code className="input-path" tabIndex={0}>{item.path}</code><div className="input-actions"><button onClick={() => { void copy(item.path); }} aria-label={`Copy path for ${item.name}`}>Copy path</button><button onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Use ${item.name} in task`}>Use for task</button></div><details className="input-integrity"><summary>SHA-256</summary><code>{item.sha256}</code></details></li>)}</ul> : listing && <p className="section-note">No imported input files yet.</p>}
   </section></details>;
 }

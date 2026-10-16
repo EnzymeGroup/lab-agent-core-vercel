@@ -13,6 +13,26 @@ npm run test:browser
 
 The verification command checks TypeScript, compiled package/client builds, runtime tests, external install consumers and documentation consistency. Browser checks use the built static client served through Core. GitHub Actions runs the same commands on Node 22 and uploads browser reports.
 
+## rc.3 local acceptance, 2026-10-16
+
+| Check | Observed result |
+| --- | --- |
+| Core/client strict checking and production build | Passed |
+| Runtime/resource/history/input/Skill/context/onboarding/terminal tests | 91/91 passed; no skipped Linux cases |
+| Packed independent consumers | 1/1 suite passed, both Python applications and installed templates |
+| Chromium browser tests | 11/11 passed, including unrelated-upload recheck, explicit bindings and incompatible-history preservation |
+| Real configured model applications | 2/2 example applications passed, plus one separate installed existing-data audit |
+| Existing source audit | 217 rows / 47 columns retained; independent checker passed, tamper failed, restoration passed |
+| Large-file I/O | 512 MiB and 1 GiB fully allocated inputs passed baseline/initial/recheck; zero model calls |
+| Documentation consistency | 14 documents checked |
+| Official npm production dependency audit | Zero reported vulnerabilities |
+
+The frozen-input regressions cover default/configured/per-task declarations, directories enumerated once, rc.2 baselines, canonical deduplication, hidden assay files, missing/changed inputs, CLI/HTTP validation and chat omission. Skill tests separate available fingerprints from observed retrieval and reject modified instructions through both loadSkill and generic readFile. Session schema tests leave stored bytes unchanged. Python modes hide/refuse task-only scripts in chat; other trusted native/MCP code may still have effects.
+
+The first live FASTA attempt genuinely failed its step budget due to ambiguous Skill/output paths. It remains failed/not_checked. Subsequent fresh runs passed after explicit path metadata was added. Exact sources, usage and trial boundaries are in [Live validation](LIVE-VALIDATION.md); measured I/O, allocation and caching limits are in [Large-file measurements](BENCHMARK.md). These trials do not establish model-quality parity, human usability or scientific discovery.
+
+Current evidence is `.artifacts/rc3/verify.log`, `.artifacts/rc3/npm-audit.json`, `.artifacts/live/2026-10-16T14-29-01-824Z/`, `.artifacts/installed-live/2026-10-16T14-30-59-089Z/`, `.artifacts/large-file-benchmark/2026-10-16T14-22-34-272Z/` and `test-results/`. Older rc.1/rc.2 snapshots below retain their historical scope. Formal npm publication has not occurred: authentication returned ENEEDAUTH and package lookup returned404. Independent human onboarding is still Not measured.
+
 ## rc.2 local acceptance, 2026-10-16
 
 | Check | Observed result |
@@ -51,7 +71,7 @@ The same test restored session/tool history, continued chat, ran the copied nati
 | Persistence | Task/chat continuation and tool evidence after reload | Session serialization and shared execution path |
 | Cancellation/failure | Aborted requests/process groups and failed/aborted terminal states | Observed controlled fault cases |
 | Browser | Desktop/mobile interaction, tool evidence, session reload, cancellation, checks and artifacts | Automated functional UI behavior |
-| Live provider | Real credential-backed inference | Not verified in the credential-free environment |
+| Live provider | Real credential-backed inference | rc.3 bounded trials passed on one configured endpoint; broad quality/compatibility Not verified |
 | Human usability | Independent new-user exercise | Not measured |
 
 Exact passing test counts and artifact paths should be reported with the verification run, rather than inferred from test presence. A test file existing in the repository is not a passing result. CI status is authoritative for its specific revision and environment.
@@ -60,4 +80,4 @@ Exact passing test counts and artifact paths should be reported with the verific
 
 No live-provider reasoning quality, cost/latency benchmark, wet-lab claim, scientific discovery claim or measured human usability is established by these fixtures. Trusted project config/Python/MCP execution is not a sandbox. Tool-loop integration and source-data-preserving arithmetic checks are engineering evidence within their stated tasks.
 
-`npm run test:live` is an explicit opt-in harness for two real-provider applications, including registered Python/Skills and a custom native sourceEvidence tool. It requires an explicitly configured tool-capable model and credentials, never substitutes fixtures, and records each run/status/usage locally. This harness has not been executed here; provider recipes and a passing fixture probe are not live-provider acceptance.
+`npm run test:live` is an explicit opt-in harness for two real-provider applications, including registered Python/Skills and a custom native sourceEvidence tool. It requires an explicitly configured tool-capable model and credentials, never substitutes fixtures, and records each run/status/usage locally. It was unexecuted at rc.2; the rc.3 outcomes are recorded above and in Live validation.

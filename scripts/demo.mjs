@@ -12,7 +12,8 @@ const port = Number(value('--port') ?? process.env.LAB_AGENT_DEMO_PORT ?? 4317);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be an integer from 0 to 65535.');
 await mkdir(project, { recursive: true });
 if (!await access(path.join(project, 'agent.config.ts')).then(() => true, () => false)) {
-  await cp(path.join(repository, 'examples/sequence-summary'), project, { recursive: true });
+  await cp(path.join(repository, 'examples/sequence-summary'), project, { recursive: true,
+    filter: source => !/(?:^|\/)(?:runs|\.lab-agent|node_modules|__pycache__)(?:\/|$)/u.test(source) && !(path.basename(source).startsWith('.env') && path.basename(source) !== '.env.example') });
   // A demo directory may be anywhere; point this copied config at this build.
   const configFile = path.join(project, 'agent.config.ts');
   const config = await readFile(configFile, 'utf8');

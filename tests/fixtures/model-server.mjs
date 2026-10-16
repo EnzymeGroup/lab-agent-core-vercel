@@ -49,7 +49,8 @@ export async function startModelServer(options = {}) {
         const wantsAnalysis = !/\[chat-only\]/i.test(user) && !toolCommand;
         if (inputPath && !toolCommand && available.some(t => t.name === 'readFile')) plan.push({ name: 'readFile', args: { path: inputPath } });
         const python = available.find(t => t.name === 'runPython');
-        const registeredScript = python?.description?.match(/Scripts:\s*([\w-]+):/)?.[1];
+        const registeredScript = python?.parameters?.properties?.script?.enum?.[0]
+          ?? python?.description?.match(/Scripts:\s*([\w-]+)(?:\s*\[[^\]]+\])?:/)?.[1];
         const explicitSkill = user.match(/\[skill:([\w-]+)\]/)?.[1];
         if (wantsAnalysis && available.some(t => t.name === 'loadSkill') && (skillNames.length || explicitSkill)) {
           const preferred = /table|csv/i.test(user) || registeredScript === 'analyze' ? 'table-quality' : 'sequence-summary';

@@ -9,7 +9,8 @@ import { startModelServer } from './fixtures/model-server.mjs';
 
 async function setup(t, extra = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-provenance-'));
-  await cp(new URL('../examples/sequence-summary/', import.meta.url), root, { recursive: true });
+  await cp(new URL('../examples/sequence-summary/', import.meta.url), root, { recursive: true,
+    filter: file => !/(?:^|\/)(?:runs|\.lab-agent|node_modules|__pycache__)(?:\/|$)/u.test(file) });
   const fixture = await startModelServer();
   const model = modelFromEnv({ LAB_AGENT_MODEL: 'provenance-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
   const config = { root, model, python: { scripts: { summarize: { path: 'tools/summarize.py', description: 'Summarize FASTA' } } },
@@ -23,7 +24,7 @@ test('versioned runs preserve first artifact hashes and original delivery across
   const { agent, fixture } = await setup(t);
   const run = await agent.runTask('Summarize the input FASTA.');
   assert.equal(run.schemaVersion, 2);
-  assert.equal(run.provenance.coreVersion, '0.1.0-rc.2');
+  assert.equal(run.provenance.coreVersion, '0.1.0-rc.3');
   assert.match(run.provenance.aiSdkVersion, /^7\./);
   assert.equal(run.provenance.inputs[0].path, 'data/input.fasta');
   assert.ok(run.provenance.code.some(file => file.path === 'tools/validate.py'));

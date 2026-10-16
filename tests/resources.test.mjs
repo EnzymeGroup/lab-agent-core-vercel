@@ -181,7 +181,9 @@ test('skills expose frontmatter progressively and load registered instructions o
   const skills = await discoverSkills(workspace);
   assert.equal(skills[0].description, 'Inspect measured evidence.');
   assert.equal(JSON.stringify(skills).includes('Private full'), false);
-  assert.equal(await loadSkill(workspace, skills, 'analysis'), body);
+  const loaded = await loadSkill(workspace, skills, 'analysis');
+  assert.ok(loaded.endsWith(body));
+  assert.match(loaded, /Skill directory \(project-relative\): "\.agents\/skills\/analysis"/);
   await assert.rejects(loadSkill(workspace, skills, '../analysis'), /Unknown skill/);
   await mkdir(path.join(root, '.agents/skills/copy'));
   await writeFile(path.join(root, '.agents/skills/copy/SKILL.md'), body);
@@ -211,6 +213,8 @@ test('registered Python receives active output context and literal argv; arbitra
   assert.equal(Object.hasOwn(tools, 'shell'), false);
   const result = await runWithExecutionContext({ outputDirectory, runId: 'run-test' }, () => invoke(tools, 'runPython', { script: 'analyze', args: ['$(touch bad)', '--input=x y'] }));
   assert.equal(result.code, 0);
+  assert.equal(result.cwd, '.');
+  assert.equal(result.outputDirectory, 'runs/run-test/output');
   assert.deepEqual(JSON.parse(result.stdout), { args: ['$(touch bad)', '--input=x y'], root, run: 'run-test', runDir: path.dirname(outputDirectory) });
   assert.equal(await readFile(path.join(outputDirectory, 'result.txt'), 'utf8'), 'measured');
   assert.equal(getExecutionContext(), undefined);

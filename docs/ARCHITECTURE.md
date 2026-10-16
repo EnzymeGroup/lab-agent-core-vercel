@@ -63,6 +63,8 @@ flowchart TD
 | scripts/pack-core.mjs | Create the local installable release-candidate tarball |
 | scripts/compare-pi.mjs | Optional matched two-application comparison against an existing Pi build |
 | scripts/live-smoke.mjs | Explicit opt-in real-provider smoke; never substitutes a fixture for missing credentials |
+| scripts/validate-installed-live.mjs | External npm installation, unaltered existing CSV source, real-provider tools and independent tamper/recheck trial |
+| scripts/benchmark-large.mjs | Opt-in full-allocation large-file hashing/checking benchmark with no model latency |
 | scripts/tui-smoke.py | Real POSIX terminal driver for the official TUI integration test |
 | scripts/check-docs.mjs | Check local documentation links and required lifecycle/evidence language |
 | tests/fixtures/model-server.mjs | Real HTTP streaming/nonstreaming OpenAI-compatible deterministic fixture |
@@ -76,6 +78,10 @@ flowchart TD
 | tests/provenance.test.mjs | Original evidence, rechecks, tampering, legacy records and actual killed-checker-worker recovery |
 | tests/files.test.mjs | Upload authorization/type/size/path boundaries and bounded safe previews |
 | tests/onboarding.test.mjs | Project environment isolation, offline inspect, diagnostics and installed templates |
+| tests/task-inputs.test.mjs | Frozen per-task manifests, unrelated-upload regression, path validation and CLI bindings |
+| tests/skills-policy.test.mjs | Available/used Skill fingerprints, exact-source reads and Python mode policy |
+| tests/session-compatibility.test.mjs | Removed/changed tool schemas preserve stored evidence with actionable errors |
+| tests/context-example.test.mjs | Native context policy and typed Python argument/cancellation examples |
 | tests/tui.test.mjs | Official terminal UI through the shared authenticated session path |
 | tests/browser.spec.ts | Compiled browser interaction checks |
 | examples/sequence-summary/ | FASTA source-preserving analysis, Skill, checker and Python driver |

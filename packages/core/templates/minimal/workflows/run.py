@@ -8,7 +8,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 task = " ".join(sys.argv[1:]) or "Summarize the supplied FASTA. Load sequence-summary, then run summarize. [skill:sequence-summary] [script:summarize]"
-command = [os.environ.get("LAB_AGENT_CLI", "lab-agent"), "run", task, "--root", str(root), "--json"]
+command = [os.environ.get("LAB_AGENT_CLI", "lab-agent"), "run", task, "--root", str(root), "--input", "data/input.fasta", "--json"]
 result = subprocess.run(command, text=True, capture_output=True)
 if result.stderr:
     print(result.stderr, end="", file=sys.stderr)

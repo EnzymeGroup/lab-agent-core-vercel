@@ -132,7 +132,7 @@ test('registered Skill lookup bypasses readRoots while retaining sensitive and h
   const skills = await discoverSkills(workspace);
   assert.equal(skills.length, 1);
   await assert.rejects(workspace.read(skills[0].path), /readRoots/);
-  assert.equal(await loadSkill(workspace, skills, 'evidence'), body);
+  assert.ok((await loadSkill(workspace, skills, 'evidence')).endsWith(body));
   await assert.rejects(loadSkill(workspace, [{ name: 'forged', description: 'forged', path: '.env' }], 'forged'), /Sensitive/);
   await link(path.join(root, '.env'), path.join(root, '.agents/skills/evidence/SKILL-alias.md'));
   await assert.rejects(loadSkill(workspace, [{ name: 'alias', description: 'alias', path: '.agents/skills/evidence/SKILL-alias.md' }], 'alias'), /Hard-linked/);

@@ -56,13 +56,17 @@ python: {
   command: 'uv',
   args: ['run', '--project', root, 'python'],
   scripts: {
-    analyze: { path: 'tools/analyze.py', description: 'Analyze the project input', timeoutMs: 120000 },
+    analyze: { modes: ['task'], path: 'tools/analyze.py', description: 'Analyze the project input', timeoutMs: 120000 },
   },
 },
 validation: { command: ['uv', 'run', '--project', root, 'python', 'checks/validate.py'] },
 ```
 
 The tool accepts a registered script name and literal argv; it cannot replace the registered entry point. Core uses project cwd, loaded project env, environment variables described in Conventions, bounded stdout/stderr, execution timeout and process-group cleanup on POSIX. Arguments are never interpreted by a shell. Install/lock the environment before an execution campaign. A script may import dependencies installed in its selected environment. The examples use only the Python standard library; NumPy/PyTorch environments and GPU jobs require their own domain configuration and have not been benchmarked here.
+
+Add `modes: ['task']` to computational registrations. Omitted modes preserve chat/task compatibility; a task-only registration is hidden and rejected in chat. This controls eligibility, not host permissions. Python remains trusted code and chat may use other side-effecting native/MCP tools.
+
+For domain arguments, [python-arguments.ts](../examples/advanced/python-arguments.ts) uses a native AI SDK Tool plus Zod to turn a fixed CSV input and bounded maxRows into literal Python argv. It uses runCommand, the active task output context and AbortSignal; no BaseTool or extra runtime is added. Ordinary runPython remains available for named script execution. Register the native tool's Python/module paths in provenance.code.
 
 Long-running external jobs need an explicit domain tool for submission, status and cancellation. A restarted session does not automatically resume an external job or replay a submission. Persist job identifiers in the application's artifacts and define recovery there.
 
@@ -92,6 +96,8 @@ This config fragment belongs inside a factory receiving env. Core starts stdio s
 
 Each .agents/skills/NAME/SKILL.md starts with YAML name and description. Only those metadata fields appear in the initial instructions. loadSkill reads the full body on demand; referenced files are read through normal workspace tools. Skill instructions do not add tool permissions or bypass registered-script restrictions. Malformed metadata, duplicate names and escaped paths fail visibly.
 
+Task acceptance fingerprints available SKILL.md files; actual loadSkill calls verify and mark use. Rechecks gate on used Skills. Explicitly register important reference files in provenance.code, or bind them as task inputs; a reference mentioned in a Skill is not automatically fingerprinted.
+
 ## Execution limits
 
 limits.maxSteps bounds SDK loop steps; limits.timeoutMs bounds a turn; limits.maxToolOutputBytes bounds file/tool return values; limits.maxContextChars bounds the message projection. Full durable messages remain separate from the projection. Older complete turns can be omitted from model input, and large tool results are explicitly truncated there. A current turn that still exceeds the projection budget fails rather than silently dropping unmatched tool calls.
@@ -101,3 +107,5 @@ Stopping at a tool-call step budget records failed execution. An ordinary final 
 ## Native workflow policy
 
 Config may pass an optional native AI SDK prepareStep callback. Core still applies its bounded model-context projection; a policy cannot bypass durable history or turn execution into a separate engine. Native activeTools/toolChoice/model policy must follow the installed SDK types. runTask/streamTurn also accept workflowId and parentRunId metadata so an application can link related runs. These labels do not schedule, resume or automatically replay child work. Use an explicit sequence or a native delegated tool for composition, and define scientific acceptance in each project's checker.
+
+[context-policy.ts](../examples/advanced/context-policy.ts) provides a reusable native prepareStep example: stable rules remain in instructions, saved intermediate artifact paths stay referenced, and a callback/model notice warns near the character budget. It removes only older complete user turns and preserves the current tool-call/result chain. References are paths, not fabricated summaries; the model must read an artifact before relying on it. A single oversized current turn still fails Core's bound. See [native examples](../examples/advanced/README.md) for wiring.

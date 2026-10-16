@@ -4,15 +4,17 @@ Requires Node 22.19+. The basic template needs no Python; the python template ne
 
 ## Install a self-contained project
 
+The [GitHub rc.3 prerelease](https://github.com/EnzymeGroup/lab-agent-core-vercel/releases/tag/v0.1.0-rc.3) contains the package. Replace the local tarball paths below with `https://github.com/EnzymeGroup/lab-agent-core-vercel/releases/download/v0.1.0-rc.3/lab-agent-core-vercel-0.1.0-rc.3.tgz` to create/install a project without cloning or building Core. The same native binary and templates are included. Formal npm registry publication still requires registry authentication.
+
 From the repository root:
 
 ```sh
 npm ci
 npm run build
 npm run pack:core
-npx --yes --package=./.artifacts/lab-agent-core-vercel-0.1.0-rc.2.tgz create-lab-agent ../my-agent --template python
+npx --yes --package=./.artifacts/lab-agent-core-vercel-0.1.0-rc.3.tgz create-lab-agent ../my-agent --template python
 cd ../my-agent
-npm install ../lab-agent-core-vercel/.artifacts/lab-agent-core-vercel-0.1.0-rc.2.tgz
+npm install ../lab-agent-core-vercel/.artifacts/lab-agent-core-vercel-0.1.0-rc.3.tgz
 cp .env.example .env
 ```
 
@@ -37,12 +39,26 @@ Core's static inspect/models path loads trusted config, instructions, Skills, lo
 ## Run and open the workbench
 
 ```sh
-npx lab-agent run "Load sequence-summary and summarize the supplied FASTA" --json
+npx lab-agent run "Load sequence-summary and summarize the supplied FASTA" --input data/input.fasta --json
 npx lab-agent sessions --json
 npx lab-agent dev
 ```
 
 The python template writes summary.json and report.md under runs/<id>/output and reconstructs expected values from the original FASTA in its independent checker. The basic template demonstrates a native countText tool; no checker is configured, so its delivery is not_checked.
+
+## Bind the actual task inputs
+
+Use repeatable CLI `--input PATH`, the workbench task input selector, or SDK options:
+
+```ts
+const run = await agent.runTask('Analyze the selected CSV with its registered tool', {
+  inputs: ['data/uploads/unique-source.csv'],
+});
+```
+
+Per-task inputs override config.provenance.inputs. Without either selection, existing data/ files are enumerated once when the run is created. SDK `inputs: []` deliberately selects no inputs. Files/directories must already exist inside the project; at most 256 declarations and 4096 files are accepted. Directory selections freeze their current files. Adding an unrelated upload afterward does not alter an earlier baseline; changing/deleting/aliasing a recorded file fails recheck. Binding a path records provenance; configure your analysis tool to consume that path too. Merely mentioning a filename in the prompt is not input binding.
+
+The workbench shows bound paths before submission and in run provenance. Uploading does not automatically insert text or send a message. Chat rejects explicit task input bindings. The sample computational Python registrations specify `modes: ['task']`; chat cannot call them. Other trusted native/MCP tools may have side effects in chat, so chat is not an execution sandbox.
 
 Task mode creates a run and invokes its checker. Chat mode persists conversation without a delivery. CLI and browser use the same history. The workbench supports source uploads, tool/schema capabilities, bounded previews, artifacts, explicit Cancel and Recheck. **One project has one active operation**, including across sessions and CLI/server processes. Opening another session does not add execution capacity.
 
@@ -81,7 +97,7 @@ import { createAgent, loadAgentConfig } from 'lab-agent-core-vercel';
 
 const agent = await createAgent(await loadAgentConfig(process.cwd()));
 try {
-  const run = await agent.runTask('Summarize the supplied FASTA');
+  const run = await agent.runTask('Summarize the supplied FASTA', { inputs: ['data/input.fasta'] });
   console.log(run.execution, run.delivery, run.provenance);
   const turn = await agent.chat('Explain source limitations', { sessionId: run.session.id });
   console.log(turn.text);
@@ -91,6 +107,8 @@ try {
 ```
 
 `agent.native` is an advanced escape hatch. Direct native calls bypass Core persistence, locks, provenance and independent delivery handling. Application code owns those responsibilities. Native delegation and explicit sequencing do not introduce a scheduler.
+
+If a restored session's tool names/schemas no longer match, SessionCompatibilityError preserves its stored history and rejects continuation before appending text or creating a run. Restore compatible definitions or create a new session. Core does not silently rewrite old tool evidence.
 
 ## Try without provider credentials
 

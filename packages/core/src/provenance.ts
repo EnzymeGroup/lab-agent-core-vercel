@@ -4,7 +4,7 @@ import { lstat, open, readFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import type { AgentConfig, FileHash, RunProvenance } from './types.js';
-import { storagePath, within } from './storage.js';
+import { InputError, storagePath, within } from './storage.js';
 
 const require = createRequire(import.meta.url);
 export const sha256 = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
@@ -33,7 +33,11 @@ export async function hashFile(root: string, file: string): Promise<FileHash> {
 }
 
 /** Configured files/directories, or data/ by convention; no implicit home scan. */
-export async function hashInputs(config: AgentConfig): Promise<FileHash[]> {
+export async function hashInputs(config: AgentConfig, selected?: string[]): Promise<FileHash[]> {
+  const declared = selected ?? config.provenance?.inputs;
+  if (declared !== undefined && (!Array.isArray(declared) || declared.length > 256 || declared.some(file => typeof file !== 'string' || !file.trim() || file.includes('\0')))) {
+    throw new InputError('Task inputs must be an array of at most 256 nonempty project paths.');
+  }
   const files = new Set<string>();
   const visit = async (file: string, optional = false): Promise<void> => {
     const path = await storagePath(config.root, file);
@@ -45,17 +49,37 @@ export async function hashInputs(config: AgentConfig): Promise<FileHash[]> {
     if (info.isSymbolicLink()) throw new Error(`Input symlinks cannot be fingerprinted: ${file}`);
     if (info.isDirectory()) {
       for (const name of (await readdir(path)).sort()) {
-        if (name.startsWith('.') || /\.(pem|key|p12|pfx)$/iu.test(name)) continue;
+        if (name.startsWith('.env') || ['.git', '.lab-agent', '.ssh', '.aws', '.gnupg', '.direnv'].includes(name) || /\.(pem|key|p12|pfx)$/iu.test(name)) continue;
         await visit(relative(config.root, resolve(path, name)));
       }
-    } else if (info.isFile()) files.add(file);
+    } else if (info.isFile()) files.add(relative(config.root, path).split('\\').join('/'));
     else throw new Error(`Input must be a regular file or directory: ${file}`);
     if (files.size > 4096) throw new Error('Input fingerprinting exceeds 4096 files. Configure provenance.inputs to select the task inputs.');
   };
-  for (const file of config.provenance?.inputs ?? ['data']) await visit(file, config.provenance?.inputs === undefined);
+  try { for (const file of declared ?? ['data']) await visit(file, declared === undefined); }
+  catch (error) {
+    if (selected !== undefined) throw new InputError(`Cannot bind task inputs: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
   const hashes: FileHash[] = [];
-  for (const file of [...files].sort()) hashes.push(await hashFile(config.root, file));
+  for (const file of [...files].sort()) {
+    try { hashes.push(await hashFile(config.root, file)); }
+    catch (error) { if (selected !== undefined) throw new InputError(`Cannot bind task input ${file}: ${error instanceof Error ? error.message : String(error)}`); throw error; }
+  }
   return hashes;
+}
+
+/** Recheck the frozen file set. New project files are unrelated to old runs. */
+export async function verifyRecordedFiles(root: string, baseline: FileHash[]): Promise<{ hashes: FileHash[]; changes: string[] }> {
+  const hashes: FileHash[] = []; const changes: string[] = [];
+  for (const original of baseline) {
+    try {
+      const current = await hashFile(root, original.path);
+      hashes.push(current);
+      if (current.sha256 !== original.sha256 || current.bytes !== original.bytes) changes.push(original.path);
+    } catch { changes.push(original.path); }
+  }
+  return { hashes, changes };
 }
 
 export async function hashCode(config: AgentConfig): Promise<FileHash[]> {
@@ -76,12 +100,13 @@ export async function hashCode(config: AgentConfig): Promise<FileHash[]> {
   return hashes;
 }
 
-export async function createProvenance(config: AgentConfig): Promise<RunProvenance> {
+export async function createProvenance(config: AgentConfig, inputs?: string[]): Promise<RunProvenance> {
   const core = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   const ai = JSON.parse(await readFile(resolve(dirname(require.resolve('ai')), '../package.json'), 'utf8'));
   const code = await hashCode(config);
   const model = typeof config.model === 'string' ? config.model : { provider: config.model.provider, id: config.model.modelId };
-  return { coreVersion: core.version, aiSdkVersion: ai.version, inputs: await hashInputs(config), code,
+  return { coreVersion: core.version, aiSdkVersion: ai.version, inputs: await hashInputs(config, inputs),
+    inputSelection: { source: inputs !== undefined ? 'turn' : config.provenance?.inputs !== undefined ? 'config' : 'default', paths: inputs ?? config.provenance?.inputs ?? ['data'] }, code,
     validationHash: sha256(JSON.stringify({ command: config.validation?.command, code })),
     configHash: sha256(JSON.stringify({ code, model, instructions: config.instructions, python: config.python,
       validation: config.validation, fileAccess: config.fileAccess, limits: config.limits, skillsDir: config.skillsDir,

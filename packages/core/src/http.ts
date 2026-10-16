@@ -74,11 +74,12 @@ export function createRequestHandler(agent: LabAgent, options: { origin: string;
         if (request.method === 'POST' && url.pathname === '/api/chat') {
           const input = parseInput(z.object({ sessionId: z.string(), mode: z.enum(['chat', 'task']).default('chat'),
             workflowId: z.string().optional(), parentRunId: z.string().optional(),
+            inputs: z.array(z.string().min(1)).max(256).optional(),
             messages: z.array(z.object({ id: z.string(), role: z.string(), parts: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()) }).passthrough()).min(1),
           }), await body(request));
           const last = input.messages.at(-1)!;
           if (last.role !== 'user' || last.parts.some(part => part.type !== 'text')) throw new InputError('Send a user message containing text parts only.');
-          const turn = await agent.streamTurn({ sessionId: input.sessionId, messageId: last.id, message: last.parts.map(part => part.text ?? '').join('\n'), mode: input.mode, workflowId: input.workflowId, parentRunId: input.parentRunId });
+          const turn = await agent.streamTurn({ sessionId: input.sessionId, messageId: last.id, message: last.parts.map(part => part.text ?? '').join('\n'), mode: input.mode, workflowId: input.workflowId, parentRunId: input.parentRunId, inputs: input.inputs });
           return createUIMessageStreamResponse({ stream: turn.stream, headers: { 'x-lab-session-id': turn.sessionId, ...(turn.runId ? { 'x-lab-run-id': turn.runId } : {}) } });
         }
         if (request.method === 'POST' && url.pathname === '/api/cancel') return json({ canceled: agent.cancel() });

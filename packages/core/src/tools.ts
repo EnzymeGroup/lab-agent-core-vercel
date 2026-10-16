@@ -2,7 +2,7 @@ import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { tool, type Tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import type { AgentConfig, Skill } from './types.js';
+import type { AgentConfig, PythonScript, Skill } from './types.js';
 import { loadSkill } from './skills.js';
 import { runCommand } from './process.js';
 import { getExecutionContext, runWithExecutionContext, type Workspace } from './workspace.js';
@@ -37,6 +37,16 @@ function assertOutputSize(value: unknown, maxBytes: number): void {
   if (serialized !== undefined && Buffer.byteLength(serialized) > maxBytes) {
     throw new Error(`Tool output exceeded ${maxBytes} bytes.`);
   }
+}
+
+function scriptAllowed(script: PythonScript, mode: 'chat' | 'task'): boolean {
+  return script.modes === undefined || (Array.isArray(script.modes) && script.modes.includes(mode));
+}
+
+/** Active-tool selection is advisory; execute enforces every named script too. */
+export function pythonToolAllowed(config: AgentConfig, mode: 'chat' | 'task'): boolean {
+  if (mode !== 'chat' && mode !== 'task') return false;
+  return Object.values(config.python?.scripts ?? {}).some(script => scriptAllowed(script, mode));
 }
 
 function limitTool(native: Tool, maxBytes: number): Tool {
@@ -93,9 +103,28 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
     tools[name] = limitTool(native, maxBytes);
   };
   register('readFile', tool({
-    description: 'Read an allowed UTF-8 project file. Sensitive files, agent metadata and paths outside configured readRoots are unavailable.',
+    description: 'Read an allowed UTF-8 project file. Registered Skill instructions retain task-start verification and actual-use tracking. Sensitive files, agent metadata and paths outside configured readRoots are unavailable.',
     inputSchema: z.object({ path: z.string().min(1) }),
-    execute: ({ path: file }) => workspace.read(file, maxBytes),
+    execute: async ({ path: file }) => {
+      // A generic file read must not bypass the named Skill provenance path.
+      // Authorize the requested read first; Skill registration never expands
+      // the readFile allowlist or grants access to sensitive paths.
+      const candidate = await workspace.resolve(file);
+      const requested = path.resolve(workspace.root, file);
+      const baselines = getExecutionContext()?.skillBaselines;
+      for (const skill of skills) {
+        const baseline = baselines?.find(value => value.name === skill.name);
+        if (requested === path.resolve(workspace.root, skill.path) ||
+          (baseline && candidate === path.resolve(workspace.root, baseline.path))) {
+          return loadSkill(workspace, skills, skill.name, maxBytes, { includeLocation: false });
+        }
+        let canonical: string;
+        try { canonical = await workspace.resolve(skill.path, { readRoots: false }); }
+        catch { continue; } // An unrelated broken Skill must not block data reads.
+        if (candidate === canonical) return loadSkill(workspace, skills, skill.name, maxBytes, { includeLocation: false });
+      }
+      return workspace.read(file, maxBytes);
+    },
   }));
   register('writeFile', tool({
     description: 'During an active task, write a UTF-8 deliverable in its current AGENT_OUTPUT_DIR. Development mode additionally permits explicitly configured writeRoots. Chat and direct native calls have no implicit write access.',
@@ -113,27 +142,30 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
     execute: ({ path: directory }) => workspace.list(directory),
   }));
   register('loadSkill', tool({
-    description: 'Load full instructions for a skill listed in the system prompt. Read referenced files only when needed.',
+    description: 'Load full instructions for a skill listed in the system prompt, with its exact source path and base directory. Resolve Skill-relative references from that directory; file-tool arguments remain project-relative. Read referenced files only when needed.',
     inputSchema: z.object({ name: z.string().min(1) }),
     execute: ({ name }) => loadSkill(workspace, skills, name, maxBytes),
   }));
   if (config.python && Object.keys(config.python.scripts).length) {
     const scripts = config.python.scripts;
     register('runPython', tool({
-      description: `Run an explicitly registered, trusted Python script with argv. Scripts: ${Object.entries(scripts).map(([name, script]) => `${name}: ${script.description}`).join('; ')}. Uses project cwd and AGENT_ROOT/AGENT_RUN_DIR/AGENT_OUTPUT_DIR environment variables.`,
-      inputSchema: z.object({ script: z.string().min(1), args: z.array(z.string()).max(256).default([]) }),
+      description: `Run an explicitly registered, trusted Python script with argv. Scripts: ${Object.entries(scripts).map(([name, script]) => `${name} [${script.modes?.join(', ') ?? 'chat, task'}]: ${script.description}`).join('; ')}. Scripts may restrict chat/task mode; disallowed calls are refused. Returns cwd "." and a project-relative outputDirectory (null in chat). Resolve bare artifact filenames from stdout under outputDirectory; file-tool arguments are project-relative. Uses AGENT_ROOT/AGENT_RUN_DIR/AGENT_OUTPUT_DIR environment variables.`,
+      inputSchema: z.object({ script: z.enum(Object.keys(scripts)), args: z.array(z.string()).max(256).default([]) }),
       execute: async ({ script: name, args }, { abortSignal }) => {
         if (!Object.hasOwn(scripts, name)) throw new Error(`Unknown Python script: ${name}`);
         if (args.some(arg => arg.includes('\0')) || args.reduce((total, arg) => total + Buffer.byteLength(arg), 0) > 65_536) {
           throw new Error('Python argv exceeds its limit or contains NUL bytes.');
         }
         const script = scripts[name];
+        const context = getExecutionContext();
+        if (context?.mode && !scriptAllowed(script, context.mode)) {
+          throw new Error(`Python script ${name} is not allowed in ${context.mode} mode.`);
+        }
         const scriptPath = await workspace.resolve(script.path, { internal: true });
         if (!scriptPath.endsWith('.py') || !(await stat(scriptPath)).isFile()) throw new Error('Registered Python path must be a regular .py file inside the project.');
-        const context = getExecutionContext();
-        const outputDirectory = context?.outputDirectory ? await workspace.resolve(context.outputDirectory, { internal: true }) : '';
+        const outputDirectory = context?.mode !== 'chat' && context?.outputDirectory ? await workspace.resolve(context.outputDirectory, { internal: true }) : '';
         const runDirectory = outputDirectory ? path.dirname(outputDirectory) : '';
-        return runCommand(config.python?.command ?? 'python3', [...(config.python?.args ?? []), scriptPath, ...args], {
+        const result = await runCommand(config.python?.command ?? 'python3', [...(config.python?.args ?? []), scriptPath, ...args], {
           cwd: workspace.root,
           env: { ...config.env, AGENT_ROOT: workspace.root, AGENT_RUN_ID: context?.runId ?? '', AGENT_RUN_DIR: runDirectory, AGENT_OUTPUT_DIR: outputDirectory },
           signal: abortSignal,
@@ -142,6 +174,7 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
           // exact serialized result as well as this raw stdout/stderr ceiling.
           maxOutputBytes: maxBytes,
         });
+        return { ...result, cwd: '.' as const, outputDirectory: outputDirectory ? path.relative(workspace.root, outputDirectory).split(path.sep).join('/') : null };
       },
     }));
   }

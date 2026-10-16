@@ -1,0 +1,6 @@
+sample_id,activity,condition
+sample-A,1.20,baseline
+sample-B,,baseline
+sample-A,NA,"condition, quoted"
+,0,target
+short-row,2.0

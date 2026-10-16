@@ -2,12 +2,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { constants } from 'node:fs';
 import { mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { FileAccessPolicy } from './types.js';
+import type { FileAccessPolicy, SkillFingerprint } from './types.js';
 
 export interface ExecutionContext {
+  mode?: 'chat' | 'task';
   outputDirectory?: string;
   runId?: string;
   signal?: AbortSignal;
+  skillBaselines?: SkillFingerprint[];
+  onSkillLoad?: (fingerprint: SkillFingerprint) => Promise<void>;
 }
 const execution = new AsyncLocalStorage<ExecutionContext>();
 export function getExecutionContext(): ExecutionContext | undefined { return execution.getStore(); }

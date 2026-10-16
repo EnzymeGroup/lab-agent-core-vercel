@@ -25,6 +25,11 @@ export function defineAgent<const T extends AgentConfig | AgentConfigFactory>(co
     throw new Error('validation.timeoutMs must be a positive integer.');
   }
   if (config.python?.args?.some(value => typeof value !== 'string' || value.includes('\0'))) throw new Error('python.args must contain valid string argv.');
+  for (const [name, script] of Object.entries(config.python?.scripts ?? {})) {
+    if (script.modes !== undefined && (!Array.isArray(script.modes) || script.modes.some(mode => mode !== 'chat' && mode !== 'task'))) {
+      throw new Error(`python.scripts.${name}.modes must be an array containing chat and/or task. Omit modes to allow both; [] disables this script.`);
+    }
+  }
   return config;
 }
 

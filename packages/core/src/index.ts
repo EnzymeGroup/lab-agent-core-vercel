@@ -1,10 +1,10 @@
 export { defineAgent, loadAgentConfig, type AgentConfigContext, type AgentConfigFactory } from './config.js';
 export { inspectConfig, doctor, describeTools } from './diagnostics.js';
-export { createAgent, RunError, projectContext, type LabAgent } from './agent.js';
+export { createAgent, RunError, SessionCompatibilityError, projectContext, type LabAgent } from './agent.js';
 export { modelFromEnv, modelInfo } from './models.js';
 export { createWorkspace, getExecutionContext, runWithExecutionContext, type Workspace, type ExecutionContext } from './workspace.js';
 export { runCommand, type CommandOptions, type CommandResult, type CommandError } from './process.js';
-export { discoverSkills, loadSkill } from './skills.js';
+export { discoverSkills, loadSkill, snapshotSkills } from './skills.js';
 export { connectMcp } from './mcp.js';
 export { createTools, waitForToolExecutions } from './tools.js';
 export { createSessionStore } from './session.js';

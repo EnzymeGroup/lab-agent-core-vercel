@@ -1,6 +1,6 @@
 # Provider recipes
 
-These are configuration recipes, not live-provider verification results. The local tests use a labeled deterministic HTTP fixture. Core accepts any compatible native AI SDK LanguageModel; modelFromEnv is a small helper for OpenAI Chat Completions and Anthropic, not an inventory of every SDK provider.
+These are configuration recipes, not blanket provider-verification results. Automated tests use a labeled deterministic HTTP fixture. A separate credentialed connectivity probe on one configured OpenAI-compatible endpoint has passed; it does not establish full workflow or scientific quality. Core accepts any compatible native AI SDK LanguageModel; modelFromEnv is a helper for OpenAI Chat Completions and Anthropic, not an inventory of every provider.
 
 ## OpenAI or Anthropic
 
@@ -65,6 +65,6 @@ This uses a native LanguageModel directly. Setting LAB_AGENT_PROVIDER=google on 
 
 ## Optional real-provider application smoke
 
-The repository includes `npm run test:live`. It is **opt-in and not run in the credential-free verification environment**. Export LAB_AGENT_PROVIDER, LAB_AGENT_MODEL and LAB_AGENT_API_KEY for the intended real provider before invoking it; LAB_AGENT_BASE_URL optionally selects the endpoint. The script does not substitute a fixture for missing credentials.
+The repository includes **opt-in** `npm run test:live`. Export LAB_AGENT_PROVIDER, LAB_AGENT_MODEL and LAB_AGENT_API_KEY for the intended real provider before invoking it; LAB_AGENT_BASE_URL optionally selects the endpoint. The script does not substitute a fixture for missing credentials. Check the actual trial results in Validation; passing fixture tests alone does not establish a live run.
 
 This makes actual, potentially billable requests on the two Python applications, checks Skill/Python execution, and additionally requires the native sourceEvidence tool on the CSV task. Evidence is written under .artifacts/live/<timestamp>. It is a bounded application-connectivity test, not a reasoning benchmark, human onboarding trial or scientific discovery validation.

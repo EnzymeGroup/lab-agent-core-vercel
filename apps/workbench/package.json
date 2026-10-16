@@ -1,5 +1,5 @@
 {
-  "name": "@lab-agent/workbench", "version": "0.1.0-rc.2", "private": true, "type": "module",
+  "name": "@lab-agent/workbench", "version": "0.1.0-rc.3", "private": true, "type": "module",
   "scripts": {"build": "next build", "dev": "next dev --hostname 127.0.0.1", "typecheck": "next typegen && tsc --noEmit"},
   "dependencies": {"next": "16.4.2", "react": "19.3.1", "react-dom": "19.3.1", "@ai-sdk/react": "4.0.146", "ai": "7.0.142"},
   "devDependencies": {"@types/react": "19.3.0", "@types/react-dom": "19.3.0"}

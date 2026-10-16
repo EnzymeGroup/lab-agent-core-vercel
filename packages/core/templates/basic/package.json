@@ -1,1 +1,1 @@
-{"name":"my-basic-agent","version":"1.0.0","private":true,"type":"module","scripts":{"run":"lab-agent run","dev":"lab-agent dev","doctor":"lab-agent doctor"},"dependencies":{"lab-agent-core-vercel":"0.1.0-rc.2","ai":"7.0.142","zod":"4.6.7"}}
+{"name":"my-basic-agent","version":"1.0.0","private":true,"type":"module","scripts":{"run":"lab-agent run","dev":"lab-agent dev","doctor":"lab-agent doctor"},"dependencies":{"lab-agent-core-vercel":"0.1.0-rc.3","ai":"7.0.142","zod":"4.6.7"}}

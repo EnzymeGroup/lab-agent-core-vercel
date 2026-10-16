@@ -12,8 +12,8 @@ export default defineAgent(({ root, env }) => ({
       execute: async () => ({ input: 'data/input.fasta', format: 'FASTA', preserveDuplicateIdentifiers: true }),
     }),
   },
-  provenance: { inputs: ['data/input.fasta'] },
-  python: { scripts: { summarize: { path: 'tools/summarize.py', description: 'Summarize data/input.fasta without changing identifiers or sequences.' } } },
+  provenance: { inputs: ['data/input.fasta'], code: ['.agents/skills/sequence-summary/references/output.md'] },
+  python: { scripts: { summarize: { modes: ['task'], path: 'tools/summarize.py', description: 'Summarize data/input.fasta without changing identifiers or sequences.' } } },
   // Optional independent checker. Remove validation to leave delivery not_checked.
   validation: { command: ['python3', 'tools/validate.py'] },
   limits: { maxSteps: 8, timeoutMs: 120000 },

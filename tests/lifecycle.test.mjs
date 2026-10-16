@@ -92,9 +92,8 @@ test('same project rejects concurrent Agent instances, explicit cancel persists 
 });
 
 test('cancel registered Python kills its process tree and preserves the in-flight tool evidence', async t => {
-  const { root, agent } = await setup(t);
+  const { root, agent } = await setup(t, { config: { python: { scripts: { slow: { path: 'tools/slow.py', description: 'Slow registered script' } } } } });
   await writeFile(path.join(root, 'tools/slow.py'), 'import os,time,subprocess\nfrom pathlib import Path\np=subprocess.Popen(["python3","-c","import time; time.sleep(120)"])\nPath("child.pid").write_text(str(p.pid))\ntime.sleep(120)\n');
-  agent.config.python.scripts.slow = { path: 'tools/slow.py', description: 'Slow registered script' };
   const turn = await agent.streamTurn({ message: '[script:slow] Execute the registered slow script.', mode: 'task' });
   await turn.stream.cancel();
   await waitUntil(() => access(path.join(root, 'child.pid')).then(() => true, () => false));

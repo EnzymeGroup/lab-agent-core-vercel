@@ -1,5 +1,16 @@
 # Changes and compatibility
 
+## 0.1.0-rc.3
+
+- Task input bindings support SDK inputs, repeatable CLI --input and the workbench selector. Selected files are frozen at acceptance; unrelated uploads no longer invalidate earlier provenance. Explicit empty input arrays select no inputs. Existing rc.2 baselines are also rechecked as frozen file sets.
+- Skill provenance distinguishes available instructions from instructions actually loaded. Used Skill edits fail integrity; unrelated unused Skill changes do not. Supporting reference files need explicit registration.
+- Computational Python examples/templates are task-only. Registration defaults retain both modes for existing applications; trusted native/Python/MCP execution is still not sandboxed.
+- Incompatible historical tool definitions produce an actionable SessionCompatibilityError without rewriting stored evidence or accepting a new run.
+- Native examples add stable-rule/artifact-reference context preparation and validated domain arguments to cooperative Python execution. An opt-in generated-byte benchmark isolates large-input hashing/checking from model latency.
+- Real-provider trials exposed ambiguous Skill/output paths. Named Skill retrieval now returns explicit source/directory/reference guidance; runPython includes cwd and project-relative outputDirectory. Fresh live and external installed-data trials passed after the correction.
+
+The package is supplied as a GitHub release candidate tarball; the npm registry remains unpublished. Provider probes, actual public-reference metadata adaptation, generated-byte I/O measurements, human onboarding and formal registry publication are separate evidence categories; see [Validation](VALIDATION.md).
+
 ## 0.1.0-rc.2
 
 This remains an unpublished release candidate. The changes address source boundary and onboarding reviews while retaining native AI SDK execution and UI messages.

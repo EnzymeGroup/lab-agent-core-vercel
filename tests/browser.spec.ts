@@ -37,7 +37,7 @@ async function createSession(page: Page) {
 test('real task, authoritative history, artifact download, tamper detection and chat mode', async ({ page, request }, testInfo) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  const sent: Array<{ sessionId: string; messages: Array<{ role: string }>; mode: string }> = [];
+  const sent: Array<{ sessionId: string; messages: Array<{ role: string }>; mode: string; inputs?: string[] }> = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   page.on('request', message => { if (message.url().endsWith('/api/chat') && message.method() === 'POST') sent.push(message.postDataJSON()); });
@@ -101,6 +101,8 @@ test('real task, authoritative history, artifact download, tamper detection and 
   expect((await readState(request)).runs).toHaveLength(runCount);
   expect(sent).toHaveLength(2);
   expect(sent.every(turn => turn.messages.length === 1 && turn.messages[0].role === 'user')).toBeTruthy();
+  expect(sent[0].inputs).toBeUndefined();
+  expect(sent[1].inputs).toBeUndefined();
   await page.getByRole('button', { name: 'Switch to dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
@@ -161,7 +163,7 @@ test('bootstrap and state errors provide a working reconnect action', async ({ p
 
 test('input imports resolve in real tool calls and safe previews expose original artifacts', async ({ page, request }, testInfo) => {
   const pageErrors: string[] = [];
-  const turns: Array<{ sessionId: string }> = [];
+  const turns: Array<{ sessionId: string; inputs?: string[] }> = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('request', message => { if (message.url().endsWith('/api/chat') && message.method() === 'POST') turns.push(message.postDataJSON()); });
   await createSession(page);
@@ -190,8 +192,11 @@ test('input imports resolve in real tool calls and safe previews expose original
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await inputs.getByRole('button', { name: `Copy path for ${name}`, exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(uploaded.path);
-  await inputs.getByRole('button', { name: `Use ${name} in message`, exact: true }).click();
+  await inputs.getByRole('button', { name: `Use ${name} in task`, exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Message to agent' })).toHaveValue(`Input file: ${uploaded.path}`);
+  await expect(page.getByRole('list', { name: 'Task input bindings' })).toContainText(uploaded.path);
+  await page.getByRole('textbox', { name: 'Project-relative input path' }).fill('data/input.fasta');
+  await page.getByRole('button', { name: 'Add input', exact: true }).click();
   expect(turns).toHaveLength(0);
   // The fixture reads the uploaded CSV as context. The registered FASTA
   // summarizer still analyzes its declared FASTA source, explicitly requested here.
@@ -203,6 +208,7 @@ test('input imports resolve in real tool calls and safe previews expose original
   await waitIdle(request);
   const state = await readState(request);
   const run = state.runs.find(item => item.session.id === turns[0].sessionId)!;
+  expect(turns[0].inputs).toEqual([uploaded.path, 'data/input.fasta']);
   expect(run.execution).toBe('completed');
   expect(run.delivery).toBe('passed');
 
@@ -287,7 +293,7 @@ test('input imports resolve in real tool calls and safe previews expose original
   await page.screenshot({ path: testInfo.outputPath('capabilities-mobile-dark.png'), fullPage: true });
   await page.keyboard.press('Escape');
   await expect(inputs.getByLabel('Choose an input file')).toBeVisible();
-  await inputs.getByRole('button', { name: `Use ${name} in message`, exact: true }).scrollIntoViewIfNeeded();
+  await inputs.getByRole('button', { name: `Use ${name} in task`, exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('inputs-mobile-dark.png'), fullPage: true });
   await page.getByRole('navigation', { name: 'Workbench panels' }).getByRole('button', { name: 'Runs & files', exact: true }).click();
   preview = await openPreview('preview.csv');
@@ -296,6 +302,113 @@ test('input imports resolve in real tool calls and safe previews expose original
   await page.screenshot({ path: testInfo.outputPath('preview-mobile-dark.png'), fullPage: true });
   await page.keyboard.press('Escape');
   expect(pageErrors).toEqual([]);
+});
+
+test('explicit task input baseline stays frozen after an unrelated upload and Chat omits bindings', async ({ page, request }, testInfo) => {
+  const turns: Array<{ sessionId: string; mode: string; inputs?: string[] }> = [];
+  page.on('request', message => { if (message.url().endsWith('/api/chat') && message.method() === 'POST') turns.push(message.postDataJSON()); });
+  await createSession(page);
+  await page.locator('.task-inputs > summary').click();
+  const path = page.getByRole('textbox', { name: 'Project-relative input path' });
+  await path.fill('/tmp/outside-project.fasta');
+  await page.getByRole('button', { name: 'Add input', exact: true }).click();
+  await expect(page.locator('.task-input-body').getByRole('alert')).toContainText('project-relative');
+  await path.fill('data/input.fasta');
+  await page.getByRole('button', { name: 'Add input', exact: true }).click();
+  await path.fill('data/not-selected.txt');
+  await page.getByRole('button', { name: 'Add input', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove input data/not-selected.txt', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Task input bindings' }).getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByRole('list', { name: 'Task input bindings' })).toContainText('data/input.fasta');
+  await page.getByRole('textbox', { name: 'Message to agent' }).fill('Summarize the original FASTA and validate the artifacts for the explicitly bound source.');
+  await page.screenshot({ path: testInfo.outputPath('task-input-bindings.png'), fullPage: true });
+  await page.setViewportSize({ width: 375, height: 900 });
+  await expect(page.getByRole('list', { name: 'Task input bindings' })).toContainText('data/input.fasta');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('task-input-bindings-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Run task', exact: true }).click();
+  await expect(page.locator('.message-assistant')).toContainText('Deterministic demo finished.');
+  await waitIdle(request);
+  expect(turns[0].inputs).toEqual(['data/input.fasta']);
+  const state = await readState(request);
+  const run = state.runs.find(item => item.session.id === turns[0].sessionId)!;
+  const before = await request.get(`/api/run?id=${encodeURIComponent(run.id)}`, { headers: await authorized(request) }).then(response => response.json());
+  expect(before.run.delivery).toBe('passed');
+  expect(before.run.provenance.inputSelection).toEqual({ source: 'turn', paths: ['data/input.fasta'] });
+  expect(before.run.provenance.inputs.map((file: { path: string }) => file.path)).toEqual(['data/input.fasta']);
+  const skill = before.run.provenance.skills.find((item: { name: string; loaded: boolean }) => item.name === 'sequence-summary' && item.loaded);
+  expect(skill).toBeTruthy();
+  expect(skill.sha256).toBe(createHash('sha256').update(await readFile(join(state.project, skill.path))).digest('hex'));
+  const evidence = page.getByRole('region', { name: 'Run evidence' });
+  await expect(evidence).toContainText('Selection: Explicit task inputs');
+  await expect(evidence).toContainText('data/input.fasta');
+  await evidence.getByText('Versions & provenance', { exact: true }).click();
+  await expect(evidence.locator('.skill-fingerprints')).toContainText('sequence-summary');
+  await expect(evidence.locator('.skill-fingerprints')).toContainText('Loaded');
+
+  await page.locator('.input-files > summary').click();
+  const inputs = page.getByRole('region', { name: 'Input files', exact: true });
+  const unrelatedName = `unrelated-B-${Date.now()}.txt`;
+  await inputs.getByLabel('Choose an input file').setInputFiles({ name: unrelatedName, mimeType: 'text/plain', buffer: Buffer.from('This unrelated upload is not a source for task A.\n') });
+  await inputs.getByRole('button', { name: 'Import file', exact: true }).click();
+  await expect(inputs.getByRole('status')).toContainText(`Imported ${unrelatedName}`);
+  await page.getByRole('button', { name: 'Recheck', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Delivery check', exact: true })).toContainText('Delivery passed');
+  await waitIdle(request);
+  await expect.poll(async () => {
+    const detail = await request.get(`/api/run?id=${encodeURIComponent(run.id)}`, { headers: await authorized(request) }).then(response => response.json());
+    return detail.run.checks.length;
+  }).toBe(before.run.checks.length + 1);
+  const after = await request.get(`/api/run?id=${encodeURIComponent(run.id)}`, { headers: await authorized(request) }).then(response => response.json());
+  expect(after.run.delivery).toBe('passed');
+  expect(after.run.provenance.inputs).toEqual(before.run.provenance.inputs);
+  expect(after.run.provenance.inputSelection).toEqual(before.run.provenance.inputSelection);
+  expect(after.run.checks.at(-1).inputChanges).toEqual([]);
+  expect(after.run.originalDelivery).toEqual(before.run.originalDelivery);
+  await page.screenshot({ path: testInfo.outputPath('frozen-input-recheck.png'), fullPage: true });
+
+  await page.getByRole('radio', { name: 'Chat', exact: true }).check();
+  await expect(page.locator('.chat-policy')).toContainText('can have side effects on the host');
+  await expect(page.locator('.chat-policy')).toContainText('omitted from Chat');
+  await page.getByRole('textbox', { name: 'Message to agent' }).fill('[chat-only] Explain the frozen provenance without running Python.');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.locator('.message-user')).toHaveCount(2);
+  await waitIdle(request);
+  expect(turns[1].mode).toBe('chat');
+  expect(turns[1].inputs).toBeUndefined();
+  await expect(page.getByRole('textbox', { name: 'Message to agent' })).toBeEnabled();
+  await page.getByRole('radio', { name: 'Task', exact: true }).check();
+  await expect(page.getByRole('list', { name: 'Task input bindings' })).toContainText('data/input.fasta');
+  await page.getByRole('button', { name: 'Use project defaults', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Task input bindings' })).toHaveCount(0);
+  await expect(page.locator('.task-inputs > summary')).toContainText('Project defaults');
+});
+
+test('incompatible legacy tool history shows recovery guidance without rewriting evidence', async ({ page, request }) => {
+  await createSession(page);
+  const state = await readState(request);
+  const sessionId = state.sessions[0].id;
+  const sessionFile = join(state.project, '.lab-agent', 'sessions', `${sessionId}.json`);
+  const record = JSON.parse(await readFile(sessionFile, 'utf8'));
+  // Host-authored legacy fixture: a historical tool that this configuration no
+  // longer provides. The UI must preserve it and surface the Core recovery error.
+  record.messages = [
+    { id: 'legacy-user', role: 'user', parts: [{ type: 'text', text: 'Historical request.' }] },
+    { id: 'legacy-agent', role: 'assistant', parts: [{ type: 'tool-retiredFixture', toolCallId: 'legacy-call', state: 'output-available', input: {}, output: { retained: true } }] },
+  ];
+  const baseline = `${JSON.stringify(record, null, 2)}\n`;
+  await writeFile(sessionFile, baseline);
+  await page.reload();
+  await expect(page.locator('.tool-call')).toContainText('retiredFixture');
+  await page.getByRole('textbox', { name: 'Message to agent' }).fill('[chat-only] Continue the legacy fixture.');
+  await page.getByRole('button', { name: 'Run task', exact: true }).click();
+  const error = page.getByRole('alert').filter({ hasText: 'Turn needs attention' });
+  await expect(error).toContainText('retiredFixture');
+  await expect(error).toContainText(/compatible|new session/i);
+  expect(await readFile(sessionFile, 'utf8')).toBe(baseline);
+  expect((await readState(request)).runs).toHaveLength(state.runs.length);
+  await expect(page.locator('.message-user')).toHaveCount(1);
 });
 
 for (const width of [375, 768, 1024, 1440]) {

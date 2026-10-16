@@ -14,6 +14,10 @@ streamTurn is the shared implementation for runTask, chat, HTTP streaming and CL
 
 .lab-agent/sessions/<id>.json stores authoritative UIMessage history, including tool arguments/results/errors. Session IDs are opaque tokens. A bounded context projection controls model input while the complete stored history remains available. Incomplete tool calls after interruption stay in storage as evidence and are omitted from subsequent model-message conversion.
 
+Tool-definition changes may make old history incompatible. SessionCompatibilityError names removed tools/schema conflicts and leaves the stored session byte-identical; no new user message or task run is accepted. Restore compatible tools or start a new session. Task-only Python registrations are filtered and enforced by mode; legacy registrations without modes retain both chat/task eligibility. Native/Python/MCP code still has host privileges and other chat tools may have side effects.
+
+Task inputs come from TurnInput.inputs, config.provenance.inputs or a once-enumerated data/ default, in that precedence order. Explicit [] means no inputs; chat rejects task bindings. inputSelection records selection source/paths, and the baseline freezes exact file paths. Rechecks hash only that set, including recorded rc.2 baselines: unrelated additions do not invalidate an earlier run, while modified/missing/aliased baseline files fail. Legacy records lacking hashes remain unknown.
+
 | Run execution | Meaning |
 | --- | --- |
 | running | Accepted operation has not reached a terminal state |
@@ -39,6 +43,8 @@ Each run has run.json and output/; an invoked checker adds check.json and valida
 ```
 
 Allowed top-level statuses are passed, partial and failed. A nonzero exit always fails delivery even if a report says passed. Missing/malformed reports and checker timeouts fail visibly. Rechecking makes no model call and appends a new checks/<observation-id> snapshot rather than replacing first evidence. originalDelivery remains fixed; latest check.json/validation.log are convenience views. Schema v2 provenance records runtime versions, configured input/code hashes and original artifact hashes. Rechecks flag input/code/artifact changes; changed source does not silently become accepted original evidence. Legacy records remain readable with provenance unknown. Validators should reconstruct required values from original source; presence alone does not establish scientific correctness.
+
+Available SKILL.md fingerprints are captured at task acceptance. loadSkill verifies those bytes and records actual use; recheck compares used Skills, so an unrelated unused Skill edit does not invalidate a run. Supporting reference files are not automatically covered by loading a Skill: register important references in provenance.code or bind them as inputs. Hashes establish byte identity, not scientific truth.
 
 ## Paths, concurrency and trust
 

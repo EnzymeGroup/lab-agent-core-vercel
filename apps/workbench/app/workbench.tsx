@@ -22,7 +22,7 @@ export default function Workbench() {
   const [panel, setPanel] = useState<Panel>('conversation');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [showCapabilities, setShowCapabilities] = useState(false);
-  const [draftReference, setDraftReference] = useState<{ id: string; text: string }>();
+  const [draftReference, setDraftReference] = useState<{ id: string; text: string; path: string }>();
   const selection = useRef(0);
   const selectedId = useRef('');
   const initialized = useRef(false);
@@ -136,7 +136,7 @@ export default function Workbench() {
 
   async function useInput(path: string) {
     if (!sessionId && !await newSession()) return;
-    setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}` });
+    setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}`, path });
     setPanel('conversation');
   }
 

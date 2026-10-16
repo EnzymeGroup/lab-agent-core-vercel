@@ -10,7 +10,7 @@ interface Props {
   token: string;
   session: SessionRecord;
   state?: AgentState;
-  draftReference?: { id: string; text: string };
+  draftReference?: { id: string; text: string; path: string };
   onStateRefresh(): Promise<AgentState | undefined>;
   onSessionUpdate(session: SessionRecord): void;
 }
@@ -18,6 +18,11 @@ interface Props {
 export default function Conversation({ token, session, state, draftReference, onStateRefresh, onSessionUpdate }: Props) {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<'chat' | 'task'>('task');
+  const [boundInputs, setBoundInputs] = useState<string[]>([]);
+  const [inputPath, setInputPath] = useState('');
+  const [bindingError, setBindingError] = useState('');
+  const boundInputsRef = useRef(boundInputs);
+  boundInputsRef.current = boundInputs;
   const [streamError, setStreamError] = useState('');
   const [stopping, setStopping] = useState(false);
   const [localStart, setLocalStart] = useState('');
@@ -39,7 +44,11 @@ export default function Conversation({ token, session, state, draftReference, on
     api: '/api/chat',
     headers: { Authorization: `Bearer ${token}` },
     prepareSendMessagesRequest: ({ messages }) => ({
-      body: { sessionId: session.id, mode: modeRef.current, messages: messages.filter(message => message.role === 'user').slice(-1) },
+      body: {
+        sessionId: session.id, mode: modeRef.current,
+        ...(modeRef.current === 'task' && boundInputsRef.current.length ? { inputs: [...boundInputsRef.current] } : {}),
+        messages: messages.filter(message => message.role === 'user').slice(-1),
+      },
     }),
     fetch: async (url, options) => {
       const response = await fetch(url, options);
@@ -109,7 +118,14 @@ export default function Conversation({ token, session, state, draftReference, on
   useEffect(() => {
     if (!draftReference || draftReference.id === insertedReference.current) return;
     insertedReference.current = draftReference.id;
+    setMode('task');
+    if (boundInputsRef.current.length >= 256 && !boundInputsRef.current.includes(draftReference.path)) {
+      setBindingError('A task can bind up to 256 input declarations. Remove one before using another uploaded file.');
+      return;
+    }
+    setBindingError('');
     setInput(previous => previous ? `${previous}\n${draftReference.text}` : draftReference.text);
+    setBoundInputs(previous => previous.includes(draftReference.path) ? previous : [...previous, draftReference.path]);
     textarea.current?.focus();
   }, [draftReference]);
 
@@ -142,6 +158,16 @@ export default function Conversation({ token, session, state, draftReference, on
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); }
   }
 
+  function bindPath() {
+    const path = inputPath.trim().replace(/^\.\//, '');
+    if (!path) return;
+    if (/^(?:[/\\]|[A-Za-z]:)/.test(path) || path.split(/[/\\]/).includes('..')) { setBindingError('Use a project-relative file or directory path without parent-directory segments.'); return; }
+    if (boundInputs.length >= 256 && !boundInputs.includes(path)) { setBindingError('A task can bind up to 256 input declarations. Remove one before adding another.'); return; }
+    setBoundInputs(previous => previous.includes(path) ? previous : [...previous, path]);
+    setInputPath('');
+    setBindingError('');
+  }
+
   return <>
     <div className="conversation-heading"><div><h1>{session.title || 'New session'}</h1><span className="model-label" title={state ? `${state.model.provider}/${state.model.id}` : undefined}>{state ? `${state.model.provider} / ${state.model.id}` : 'Loading model…'}</span></div><button className="text-button" onClick={() => { void restore(); }} disabled={streaming} aria-label="Refresh saved session">Refresh</button></div>
     {working && <div className="activity-toolbar" role="status"><span className="activity-indicator" aria-hidden="true" /><strong>{state?.active?.mode === 'chat' || (!state?.active && mode === 'chat') ? 'Chat in progress' : 'Task in progress'}</strong><span className="elapsed">{duration(state?.active?.sessionId === session.id ? state.active.startedAt : localStart || new Date().toISOString())}</span>{!streaming && <span className="background-note">Running on server · restoring history</span>}<button onClick={() => { void cancel(); }} disabled={stopping}>{stopping ? 'Stopping…' : 'Stop'}</button></div>}
@@ -153,6 +179,7 @@ export default function Conversation({ token, session, state, draftReference, on
     </div>
     <form className="composer" onSubmit={event => { void submit(event); }}>
       <div className="composer-controls"><fieldset className="mode-switch" disabled={blocked}><legend className="sr-only">Interaction mode</legend>{(['task', 'chat'] as const).map(value => <label key={value} className={mode === value ? 'active' : ''}><input type="radio" name={`mode-${session.id}`} value={value} checked={mode === value} onChange={() => setMode(value)} /><span>{value === 'task' ? 'Task' : 'Chat'}</span></label>)}</fieldset><span className="composer-mode-hint">{mode === 'task' ? 'Track execution & delivery' : 'Continue the conversation'}</span></div>
+      {mode === 'task' ? <details className="task-inputs" open={boundInputs.length > 0 || undefined}><summary>Task inputs <span>{boundInputs.length ? `${boundInputs.length} explicit` : 'Project defaults'}</span></summary><div className="task-input-body"><p>{boundInputs.length ? 'These bindings override project defaults for task turns until removed. Only the recorded files are rechecked.' : 'Project defaults will select inputs. The server freezes the file set when this task starts.'}</p>{boundInputs.length > 0 && <ul aria-label="Task input bindings">{boundInputs.map(path => <li key={path}><code>{path}</code><button type="button" aria-label={`Remove input ${path}`} disabled={blocked} onClick={() => setBoundInputs(previous => previous.filter(item => item !== path))}>Remove</button></li>)}</ul>}<div className="manual-input-binding"><label className="sr-only" htmlFor="task-input-path">Project-relative input path</label><input id="task-input-path" value={inputPath} onChange={event => setInputPath(event.target.value)} placeholder="data/input.fasta or a directory" disabled={blocked} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); bindPath(); } }} /><button type="button" disabled={blocked || !inputPath.trim()} onClick={bindPath}>Add input</button></div>{boundInputs.length > 0 && <button type="button" className="text-button default-inputs-button" onClick={() => { setBoundInputs([]); setBindingError(''); }} disabled={blocked}>Use project defaults</button>}{bindingError && <p className="input-error" role="alert">{bindingError}</p>}</div></details> : <p className="chat-policy" role="note">Chat creates no task run. Enabled Python and native tools can have side effects on the host. {state?.pythonScripts ? `${state.pythonScripts.filter(script => script.modes.includes('chat')).length} Python script(s) allowed in Chat; task-only scripts are unavailable.` : 'Check Capabilities for the configured script modes.'}{boundInputs.length > 0 && ' Task input bindings are retained for Task mode and omitted from Chat.'}</p>}
       <label htmlFor="message-input" className="sr-only">Message to agent</label><textarea id="message-input" ref={textarea} value={input} onChange={event => setInput(event.target.value)} onKeyDown={inputKey} placeholder={mode === 'task' ? 'Describe the task and how to check the result…' : 'Ask about your project…'} rows={3} disabled={blocked} aria-describedby="composer-help" />
       <div className="composer-footer"><span id="composer-help">Enter to send · Shift + Enter for a new line</span><button type="submit" className="primary" disabled={!input.trim() || blocked}>{mode === 'task' ? 'Run task' : 'Send message'} <span aria-hidden="true">↑</span></button></div>
     </form>

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { AgentConfig, CheckObservation, CheckReport, RunRecord } from './types.js';
 import { acquireOperation, atomicJSON, atomicText, errorMessage, opaqueId, readJSON, storagePath } from './storage.js';
 import { runCommand } from './process.js';
-import { changedHashes, createProvenance, hashArtifacts, hashCode, hashInputs, sha256 } from './provenance.js';
+import { changedHashes, createProvenance, hashArtifacts, hashCode, verifyRecordedFiles, sha256 } from './provenance.js';
 
 const fileHashSchema = z.object({ path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/u), bytes: z.number().int().nonnegative() });
 const observationSchema = z.object({
@@ -18,6 +18,8 @@ const observationSchema = z.object({
 const runSchema = z.object({
   schemaVersion: z.literal(2).optional(),
   provenance: z.object({ coreVersion: z.string(), aiSdkVersion: z.string(), inputs: z.array(fileHashSchema), code: z.array(fileHashSchema),
+    inputSelection: z.object({ source: z.enum(['turn', 'config', 'default']), paths: z.array(z.string()) }).optional(),
+    skills: z.array(fileHashSchema.extend({ name: z.string(), loaded: z.boolean(), loadedAt: z.iso.datetime().optional() })).optional(),
     configHash: z.string(), validationHash: z.string(), artifacts: z.array(fileHashSchema) }).optional(),
   originalDelivery: observationSchema.optional(), checks: z.array(observationSchema).optional(),
   pendingCheck: z.object({ id: z.string(), startedAt: z.iso.datetime(), kind: z.enum(['initial', 'recheck']) }).optional(),
@@ -69,10 +71,11 @@ export function createRunStore(config: AgentConfig) {
   };
   return {
     directory, save, load,
-    async create(task: string, sessionId: string, links: { workflowId?: string; parentRunId?: string } = {}): Promise<RunRecord> {
+    async create(task: string, sessionId: string, options: { workflowId?: string; parentRunId?: string; inputs?: string[] } = {}): Promise<RunRecord> {
+      const { inputs, ...links } = options;
       if (links.workflowId) opaqueId(links.workflowId);
       if (links.parentRunId) opaqueId(links.parentRunId);
-      const provenance = await createProvenance(config);
+      const provenance = await createProvenance(config, inputs);
       const startedAt = new Date().toISOString();
       const id = `${startedAt.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
       const output = await storagePath(root, `runs/${id}/output`, true);
@@ -147,9 +150,10 @@ export async function checkRunUnlocked(config: AgentConfig, value: string, signa
     listed = true;
     artifactHashes = await hashArtifacts(config.root, run.id, run.artifacts);
     if (run.provenance) {
-      inputChanges = changedHashes(run.provenance.inputs, await hashInputs(config));
+      inputChanges = (await verifyRecordedFiles(config.root, run.provenance.inputs)).changes;
       const code = await hashCode(config);
       codeChanges = changedHashes(run.provenance.code, code);
+      codeChanges.push(...(await verifyRecordedFiles(config.root, (run.provenance.skills ?? []).filter(skill => skill.loaded))).changes);
       validationHash = sha256(JSON.stringify({ command: config.validation?.command, code }));
       if (validationHash !== run.provenance.validationHash && !codeChanges.length) codeChanges.push('validation configuration');
       if (inputChanges.length || codeChanges.length) throw new Error(`Provenance changed since execution: ${[...inputChanges, ...codeChanges].join(', ')}`);
@@ -213,8 +217,9 @@ export async function checkRunUnlocked(config: AgentConfig, value: string, signa
     const changedDuringCheck = changedHashes(artifactHashes, finalHashes);
     run.artifacts = finalArtifacts; artifactHashes = finalHashes;
     if (run.provenance) {
-      inputChanges = changedHashes(run.provenance.inputs, await hashInputs(config));
+      inputChanges = (await verifyRecordedFiles(config.root, run.provenance.inputs)).changes;
       codeChanges = changedHashes(run.provenance.code, await hashCode(config));
+      codeChanges.push(...(await verifyRecordedFiles(config.root, (run.provenance.skills ?? []).filter(skill => skill.loaded))).changes);
     }
     if (changedDuringCheck.length || inputChanges.length || codeChanges.length) {
       report = { ...report, status: 'failed', issues: [...report.issues, `Files changed during validation: ${[...changedDuringCheck, ...inputChanges, ...codeChanges].join(', ')}`] };

@@ -12,7 +12,7 @@ import { checkRun } from './delivery.js';
 const help = `lab-agent — scientific Agent execution with AI SDK
 
   init <directory> --template NAME Create basic or python project (minimal aliases python)
-  run <task> [--session ID]         Execute a task, write outputs and check delivery
+  run <task> [--input PATH]         Execute a task with frozen input bindings; repeat --input
   chat [--session ID]              Official interactive terminal UI
   check <run-id|runs/path>          Recheck existing outputs without model inference
   dev | serve [--port N]           Open the local browser workbench
@@ -40,6 +40,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       root: { type: 'string', default: '.' }, config: { type: 'string', default: 'agent.config.ts' },
       session: { type: 'string' }, json: { type: 'boolean', default: false }, port: { type: 'string' }, help: { type: 'boolean', default: false },
       template: { type: 'string', default: 'python' }, 'probe-model': { type: 'boolean', default: false },
+      input: { type: 'string', multiple: true },
     } });
     jsonOutput = parsed.values.json;
     const [command, ...positionals] = parsed.positionals;
@@ -52,6 +53,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (!['run', 'chat', 'check', 'dev', 'serve', 'sessions', 'inspect', 'models', 'doctor', 'recover'].includes(command)) throw new Error(`Unknown command: ${command}`);
     if (parsed.values['probe-model'] && command !== 'doctor') throw new Error('--probe-model is only valid for doctor.');
+    if (parsed.values.input && command !== 'run') throw new Error('--input is only valid for run.');
     const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value, null, jsonOutput ? 0 : 2)}\n`);
     const root = resolve(parsed.values.root);
     if (command === 'doctor') {
@@ -71,7 +73,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     agent = await createAgent(config);
     if (command === 'run') {
       if (!positionals.length) throw new Error('Usage: lab-agent run <task> [--session ID]');
-      const run = await agent.runTask(positionals.join(' '), { sessionId: parsed.values.session });
+      const run = await agent.runTask(positionals.join(' '), { sessionId: parsed.values.session, inputs: parsed.values.input });
       print(run);
       return run.delivery === 'failed' ? 1 : run.delivery === 'partial' ? 2 : 0;
     }

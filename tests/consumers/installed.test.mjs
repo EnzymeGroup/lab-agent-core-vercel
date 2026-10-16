@@ -36,7 +36,8 @@ test('npm-packed package runs two Python applications outside the repository', {
   for (const name of ['sequence-summary', 'table-quality']) {
     const project = path.join(external, name);
     projects.push(project);
-    await cp(path.join(repository, 'examples', name), project, { recursive: true });
+    await cp(path.join(repository, 'examples', name), project, { recursive: true,
+      filter: file => !/(?:^|\/)(?:runs|\.lab-agent|node_modules|__pycache__)(?:\/|$)/u.test(file) });
     const result = await command('python3', ['workflows/run.py'], { cwd: project, env });
     assert.equal(result.code, 0, result.stderr || result.stdout);
     const run = JSON.parse(result.stdout);

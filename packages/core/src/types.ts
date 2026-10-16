@@ -7,6 +7,7 @@ export interface FileAccessPolicy {
 }
 
 export interface PythonScript {
+  modes?: Array<'chat' | 'task'>;
   path: string;
   description: string;
   timeoutMs?: number;
@@ -85,11 +86,14 @@ export interface RunProvenance {
   coreVersion: string;
   aiSdkVersion: string;
   inputs: FileHash[];
+  inputSelection?: { source: 'turn' | 'config' | 'default'; paths: string[] };
+  skills?: SkillFingerprint[];
   code: FileHash[];
   configHash: string;
   validationHash: string;
   artifacts: FileHash[];
 }
+export interface SkillFingerprint extends FileHash { name: string; loaded: boolean; loadedAt?: string }
 export interface CheckObservation {
   id: string;
   kind: 'initial' | 'recheck';
@@ -104,6 +108,7 @@ export interface CheckObservation {
   validationHash?: string;
 }
 export interface TurnInput {
+  inputs?: string[];
   workflowId?: string;
   parentRunId?: string;
   message: string;

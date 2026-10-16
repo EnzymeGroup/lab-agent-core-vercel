@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const files = ['README.md', 'AGENTS.md', 'docs/CONTRACTS.md', 'docs/EXTENDING.md', 'docs/QUICKSTART.md', 'docs/CONVENTIONS.md', 'docs/ARCHITECTURE.md', 'docs/VALIDATION.md', 'docs/COMPARISON.md', 'docs/PROVIDERS.md', 'docs/CHANGELOG.md', 'docs/REVIEW-LEDGER.md'];
+const files = ['README.md', 'AGENTS.md', 'docs/CONTRACTS.md', 'docs/EXTENDING.md', 'docs/QUICKSTART.md', 'docs/CONVENTIONS.md', 'docs/ARCHITECTURE.md', 'docs/VALIDATION.md', 'docs/COMPARISON.md', 'docs/PROVIDERS.md', 'docs/CHANGELOG.md', 'docs/REVIEW-LEDGER.md', 'docs/BENCHMARK.md', 'docs/LIVE-VALIDATION.md'];
 const issues = [];
 for (const file of files) {
   const text = await readFile(path.join(root, file), 'utf8');

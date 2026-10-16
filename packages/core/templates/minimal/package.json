@@ -9,7 +9,7 @@
     "doctor": "lab-agent doctor"
   },
   "dependencies": {
-    "lab-agent-core-vercel": "0.1.0-rc.2",
+    "lab-agent-core-vercel": "0.1.0-rc.3",
     "ai": "7.0.142",
     "zod": "4.6.7"
   }
