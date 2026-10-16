@@ -1,63 +1,80 @@
 # Quickstart
 
-Node.js 22.19+ is required. The examples use Python 3.10+ and its standard library. This release candidate has not been published to npm.
+Requires Node 22.19+. The basic template needs no Python; the python template needs Python 3.10+ and no third-party Python packages. The package has not been published to npm.
 
-## Build and install outside the repository
+## Install a self-contained project
 
 From the repository root:
 
 ```sh
 npm ci
 npm run build
-mkdir -p .artifacts
-npm pack -w lab-agent-core-vercel --pack-destination .artifacts
-node packages/core/dist/create.js ../my-agent
+npm run pack:core
+npx --yes --package=./.artifacts/lab-agent-core-vercel-0.1.0-rc.2.tgz create-lab-agent ../my-agent --template python
 cd ../my-agent
-npm install ../lab-agent-core-vercel/.artifacts/lab-agent-core-vercel-0.1.0-rc.1.tgz
+npm install ../lab-agent-core-vercel/.artifacts/lab-agent-core-vercel-0.1.0-rc.2.tgz
 cp .env.example .env
 ```
 
-Set LAB_AGENT_PROVIDER=openai, LAB_AGENT_MODEL to a tool-capable model ID and LAB_AGENT_API_KEY to its credential in .env. LAB_AGENT_BASE_URL optionally selects an OpenAI-compatible endpoint ending in /v1. For Anthropic set LAB_AGENT_PROVIDER=anthropic and use its model ID and credential. No default model or synthetic live credential is supplied. Missing model/credential configuration fails explicitly.
+Use `--template basic` for a small native-tool project or `--template python` for FASTA analysis plus an independent checker. `minimal` remains an alias for python. The installed command `lab-agent init DIRECTORY --template NAME` provides the same scaffolds. The scaffold dependency follows the installed Core version.
 
-## Run and inspect
+Set LAB_AGENT_PROVIDER=openai, LAB_AGENT_MODEL to a tool-capable model ID and LAB_AGENT_API_KEY to its credential. LAB_AGENT_BASE_URL optionally selects an OpenAI-compatible endpoint ending in /v1. [Provider recipes](PROVIDERS.md) cover OpenAI, Anthropic, local vLLM/Ollama and native Google integration. Missing model/credential configuration fails explicitly.
+
+The binary is **create-lab-agent inside the lab-agent-core-vercel package**. If this package is later published, the registry spelling will be `npx --package=lab-agent-core-vercel create-lab-agent my-agent --template basic`. A separate create-lab-agent npm package is not assumed to exist. The tarball command above works with the current unpublished build.
+
+## Diagnose before inference
 
 ```sh
 npx lab-agent inspect --json
+npx lab-agent models --json
+npx lab-agent doctor --json
+# Optional, explicit and potentially billable:
+npx lab-agent doctor --probe-model --json
+```
+
+Core's static inspect/models path loads trusted config, instructions, Skills, local native tool schemas and existing records. It does not initialize MCP or invoke a model. MCP entries are marked configured until connected. Doctor checks Node, the configured Python command's version, registered script existence/regular-file status and each MCP connection/list-tools/cleanup. It does not run analysis scripts. An unavailable optional MCP is a warning; an unavailable required MCP is a failed diagnostic. Default doctor performs no inference. The explicit probe sends one tiny tool-free request and establishes connectivity only.
+
+## Run and open the workbench
+
+```sh
 npx lab-agent run "Load sequence-summary and summarize the supplied FASTA" --json
 npx lab-agent sessions --json
 npx lab-agent dev
 ```
 
-Open the printed loopback URL. Task mode creates a run and invokes its configured checker; chat mode persists the conversation without creating a delivery. The CLI and browser restore the same histories. Tool arguments/results, session history, run state and downloadable outputs are visible in the workbench. Explicit Cancel propagates to model requests and registered subprocesses. Recheck reruns only the validator.
+The python template writes summary.json and report.md under runs/<id>/output and reconstructs expected values from the original FASTA in its independent checker. The basic template demonstrates a native countText tool; no checker is configured, so its delivery is not_checked.
 
-`lab-agent check RUN_ID --json` rechecks an existing result without another model call. `lab-agent recover` handles stale same-host dead-process ownership after interruption; it never replays tools. `lab-agent models` prints configured model information. `lab-agent chat` opens the terminal conversation entry point. All commands accept `--root PROJECT` when called elsewhere.
+Task mode creates a run and invokes its checker. Chat mode persists conversation without a delivery. CLI and browser use the same history. The workbench supports source uploads, tool/schema capabilities, bounded previews, artifacts, explicit Cancel and Recheck. **One project has one active operation**, including across sessions and CLI/server processes. Opening another session does not add execution capacity.
 
-On a remote server, forward the printed loopback port to your computer, for example `ssh -N -L 8787:127.0.0.1:8787 USER@SERVER`, then open the local forwarded address. Use port 4317 instead for the default demo. The workbench is a trusted local interface; hosted multi-user execution requires an additional authenticated execution service.
+`lab-agent check RUN_ID --json` appends an independent observation without model inference or replacing the original check evidence. `lab-agent recover` diagnoses stale same-host dead-process ownership and never replays tools. Hard host/process crashes can leave detached processes outside that metadata recovery; operators must inspect/clean those processes or use OS isolation. `lab-agent chat` opens the official SDK terminal interface. All commands accept `--root PROJECT` when called elsewhere.
 
-## Customize the scaffold
+For a remote server, forward the loopback port: `ssh -N -L 8787:127.0.0.1:8787 USER@SERVER`, then open the local forwarded address. Use 4317 for the default demo. This does not create a hosted multiuser service.
 
-Edit AGENTS.md for project rules. Add a task-specific `.agents/skills/<name>/SKILL.md` with name and description in YAML frontmatter. Only metadata is in the initial prompt; loadSkill reads the full instructions when requested. Put long reference material in sibling reference files and load it only when needed.
+## Customize without moving your project
 
-Register fixed Python entry points in agent.config.ts:
+Keep existing data/scripts in place; add a factory config:
 
 ```ts
-python: {
-  scripts: {
-    summarize: {
-      path: 'tools/summarize.py',
-      description: 'Summarize data/input.fasta without changing identifiers.',
-      timeoutMs: 30000,
-    },
-  },
-},
-validation: { command: ['python3', 'tools/validate.py'], timeoutMs: 30000 },
+import { defineAgent, modelFromEnv } from 'lab-agent-core-vercel';
+
+export default defineAgent(({ root, env }) => ({
+  root,
+  model: modelFromEnv(env),
+  provenance: { inputs: ['data/input.fasta'] },
+  python: { scripts: {
+    summarize: { path: 'tools/summarize.py', description: 'Summarize the original FASTA.' },
+  } },
+  validation: { command: ['python3', 'tools/validate.py'], timeoutMs: 30000 },
+}));
 ```
 
-The Agent invokes runPython with `{script:'summarize',args:[]}`. Core supplies AGENT_ROOT, AGENT_RUN_DIR, AGENT_OUTPUT_DIR and AGENT_RUN_ID. Scripts write delivery files under AGENT_OUTPUT_DIR. The checker reads the original input and outputs, writes its report to AGENT_CHECK_FILE, and exits nonzero on failed acceptance. Removing validation leaves delivery not_checked. Configuration and registered code are trusted project code.
+The env object merges the project's parsed .env with inherited process variables; explicit process values win. Loading projects never mutates process.env. Existing object configs calling modelFromEnv() remain supported through scoped config evaluation. Native tools/subprocesses receive the loaded project env through config.env. Never return that env object as a model-visible tool result.
 
-The scaffold's `python3 workflows/run.py` invokes the same installed CLI and parses its JSON RunRecord. Copy the complete [table-quality example](../examples/table-quality/README.md) for a CSV starting point.
+Edit AGENTS.md for rules and `.agents/skills/<name>/SKILL.md` for progressive instructions. The Agent invokes runPython with `{script:'summarize',args:[]}`. Scripts receive AGENT_ROOT, AGENT_RUN_DIR, AGENT_OUTPUT_DIR and AGENT_RUN_ID. Write outputs only under AGENT_OUTPUT_DIR. A checker receives AGENT_CHECK_FILE and writes the documented structured report. Registered config/Python/MCP/native tools are trusted host code.
 
-## Use TypeScript
+For existing repositories, Python virtualenv/uv, native tools, MCP and optional workflow hooks, see [Extensions](EXTENDING.md). `python3 workflows/run.py` drives the same CLI. Copy the complete [table-quality application](../examples/table-quality/README.md) for raw CSV preservation.
+
+## Use the SDK
 
 ```ts
 import { createAgent, loadAgentConfig } from 'lab-agent-core-vercel';
@@ -65,16 +82,16 @@ import { createAgent, loadAgentConfig } from 'lab-agent-core-vercel';
 const agent = await createAgent(await loadAgentConfig(process.cwd()));
 try {
   const run = await agent.runTask('Summarize the supplied FASTA');
-  console.log(run.execution, run.delivery, run.artifacts);
-  const turn = await agent.chat('Explain the source limitations', { sessionId: run.session.id });
+  console.log(run.execution, run.delivery, run.provenance);
+  const turn = await agent.chat('Explain source limitations', { sessionId: run.session.id });
   console.log(turn.text);
 } finally {
   await agent.close();
 }
 ```
 
-Add custom tools using native `tool()` from ai and a schema from zod. Delegate through a native ToolLoopAgent, or explicitly sequence two Agents in application code; see [native examples](../examples/advanced/README.md). `agent.native` is an advanced escape hatch outside Core persistence and automatic delivery handling.
+`agent.native` is an advanced escape hatch. Direct native calls bypass Core persistence, locks, provenance and independent delivery handling. Application code owns those responsibilities. Native delegation and explicit sequencing do not introduce a scheduler.
 
-## Try without a live provider
+## Try without provider credentials
 
-Run `npm run demo` from the repository after building. Use `npm run demo -- --port 4318` to change the port, or `--root /absolute/project` to choose its persistent demo directory. The workbench displays a deterministic-demo label. This local fixture makes genuine Chat Completions requests and tool loops while returning fixed model decisions. It does not measure live reasoning or scientific validity.
+Run `npm run demo` after building. `npm run demo -- --port 4318 --root /absolute/demo-project` chooses its loopback port and persistent directory. The model is a clearly labeled deterministic local fixture with real HTTP streaming/tool execution. This verifies integration, not provider reasoning quality, scientific discovery or human onboarding success.

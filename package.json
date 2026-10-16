@@ -1,6 +1,6 @@
 {
   "name": "lab-agent-core-vercel-workspace",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "private": true,
   "type": "module",
   "workspaces": ["packages/*", "apps/*"],
@@ -13,6 +13,7 @@
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
     "test:consumers": "node --test --test-concurrency=1 tests/consumers/*.test.mjs",
     "test:browser": "playwright test",
+    "test:live": "node scripts/live-smoke.mjs",
     "verify": "npm run typecheck && npm run build && npm test && npm run test:consumers && node scripts/check-docs.mjs",
     "demo": "node scripts/demo.mjs",
     "pack:core": "node scripts/pack-core.mjs"

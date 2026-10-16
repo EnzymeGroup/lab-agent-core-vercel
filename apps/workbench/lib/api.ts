@@ -2,6 +2,27 @@ import type { CheckReport, RunRecord, SessionRecord, Skill } from '../../../pack
 
 export type { CheckReport, RunRecord, SessionRecord };
 export type SessionSummary = Omit<SessionRecord, 'messages'>;
+export interface UploadedFile {
+  path: string;
+  name: string;
+  bytes: number;
+  sha256: string;
+  importedAt: string;
+}
+export interface UploadListing {
+  files: UploadedFile[];
+  maxBytes: number;
+  extensions: string[];
+}
+export interface ArtifactPreview {
+  kind: 'csv' | 'json' | 'markdown' | 'text' | 'image';
+  path: string;
+  bytes: number;
+  truncated: boolean;
+  content?: string;
+  rows?: string[][];
+  mediaType?: string;
+}
 export interface AgentState {
   project: string;
   busy: boolean;
@@ -9,6 +30,9 @@ export interface AgentState {
   model: { provider: string; id: string };
   skills: Skill[];
   tools: string[];
+  toolDetails?: Array<{ name: string; description: string; inputSchema: unknown }>;
+  mcp?: Array<{ name: string; transport: string; optional: boolean; status: 'connected' | 'unavailable'; error?: string }>;
+  fileAccess?: { mode?: 'analysis' | 'development'; readRoots?: string[]; writeRoots?: string[] };
   sessions: SessionSummary[];
   runs: RunRecord[];
   issues: string[];
@@ -41,6 +65,11 @@ export function errorMessage(error: unknown): string {
 
 export function formatDate(date: string): string {
   return new Date(date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  return bytes < 1_048_576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1_048_576).toFixed(1)} MiB`;
 }
 
 export function duration(startedAt: string, finishedAt?: string): string {

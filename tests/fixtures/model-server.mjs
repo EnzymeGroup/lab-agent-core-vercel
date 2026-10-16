@@ -45,7 +45,9 @@ export async function startModelServer(options = {}) {
       if (!plan) {
         plan = [];
         const toolCommand = user.match(/\[tool:([\w-]+)\]/);
+        const inputPath = user.match(/\[input:([^\]\r\n]+)\]/)?.[1];
         const wantsAnalysis = !/\[chat-only\]/i.test(user) && !toolCommand;
+        if (inputPath && !toolCommand && available.some(t => t.name === 'readFile')) plan.push({ name: 'readFile', args: { path: inputPath } });
         const python = available.find(t => t.name === 'runPython');
         const registeredScript = python?.description?.match(/Scripts:\s*([\w-]+):/)?.[1];
         const explicitSkill = user.match(/\[skill:([\w-]+)\]/)?.[1];
@@ -66,6 +68,7 @@ export async function startModelServer(options = {}) {
             const p = schema.properties?.[key] ?? {};
             args[key] = p.enum?.[0] ?? (p.type === 'number' || p.type === 'integer' ? 2 : p.type === 'boolean' ? true : p.type === 'array' ? [] : 'fixture MCP request');
           }
+          if (requested === 'readFile' && inputPath) args.path = inputPath;
           plan.push({ name: requested, args: options.toolInput ?? args });
         }
       }

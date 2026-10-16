@@ -10,11 +10,12 @@ interface Props {
   token: string;
   session: SessionRecord;
   state?: AgentState;
+  draftReference?: { id: string; text: string };
   onStateRefresh(): Promise<AgentState | undefined>;
   onSessionUpdate(session: SessionRecord): void;
 }
 
-export default function Conversation({ token, session, state, onStateRefresh, onSessionUpdate }: Props) {
+export default function Conversation({ token, session, state, draftReference, onStateRefresh, onSessionUpdate }: Props) {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<'chat' | 'task'>('task');
   const [streamError, setStreamError] = useState('');
@@ -32,6 +33,7 @@ export default function Conversation({ token, session, state, onStateRefresh, on
   refreshRef.current = onStateRefresh;
   const mounted = useRef(true);
   const pendingTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const insertedReference = useRef<string | undefined>(undefined);
 
   const transport = useMemo(() => new DefaultChatTransport({
     api: '/api/chat',
@@ -104,6 +106,12 @@ export default function Conversation({ token, session, state, onStateRefresh, on
     if (shouldFollow.current) end.current?.scrollIntoView({ behavior: 'instant', block: 'end' });
   }, [messages]);
   useEffect(() => { textarea.current?.focus(); }, [session.id]);
+  useEffect(() => {
+    if (!draftReference || draftReference.id === insertedReference.current) return;
+    insertedReference.current = draftReference.id;
+    setInput(previous => previous ? `${previous}\n${draftReference.text}` : draftReference.text);
+    textarea.current?.focus();
+  }, [draftReference]);
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();

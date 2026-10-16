@@ -69,7 +69,7 @@ test('native provider registry sends OpenAI-compatible traffic to Chat Completio
 test('canonical workspace confines existing and missing paths through symlinks', async t => {
   const root = await temporary(t);
   const outside = await temporary(t);
-  const workspace = await createWorkspace(root);
+  const workspace = await createWorkspace(root, { mode: 'development', writeRoots: ['.'] });
   await writeFile(path.join(outside, 'private.txt'), 'outside');
   await symlink(outside, path.join(root, 'external'));
   await assert.rejects(workspace.read('../private.txt'), /escapes/);
@@ -78,7 +78,7 @@ test('canonical workspace confines existing and missing paths through symlinks',
   await assert.rejects(workspace.resolve(`${root}-sibling/new.txt`), /escapes/);
   await mkdir(path.join(root, 'real'));
   await symlink(path.join(root, 'real'), path.join(root, 'inside'));
-  await workspace.write('inside/sub/data.txt', 'inside');
+  await runWithExecutionContext({ runId: 'current', outputDirectory: path.join(root, 'runs/current/output') }, () => workspace.write('inside/sub/data.txt', 'inside'));
   assert.equal(await workspace.read('real/sub/data.txt'), 'inside');
   assert.deepEqual((await workspace.list('real/sub')).map(entry => entry.type), ['file']);
 });
@@ -92,12 +92,12 @@ test('file tools protect metadata through aliases and allow output artifacts onl
   await assert.rejects(workspace.write('alias/operation.lock', '{}'), /metadata/);
   await writeFile(path.join(root, '.lab-agent/private.json'), 'original');
   await link(path.join(root, '.lab-agent/private.json'), path.join(root, 'hardlink.json'));
-  await assert.rejects(workspace.write('hardlink.json', 'bad'), /hard-linked/);
+  await assert.rejects(workspace.write('hardlink.json', 'bad'), /hard-linked/i);
   assert.equal(await readFile(path.join(root, '.lab-agent/private.json'), 'utf8'), 'original');
   for (const file of ['runs/run-1/run.json', 'runs/run-1/check.json', 'runs/run-1/output', 'runs/run-1/validation.log']) {
-    await assert.rejects(workspace.write(file, 'bad'), /output only/);
+    await assert.rejects(workspace.write(file, 'bad'), /metadata|output|active task/);
   }
-  await workspace.write('runs/run-1/output/report.txt', 'artifact');
+  await runWithExecutionContext({ runId: 'run-1', outputDirectory: path.join(root, 'runs/run-1/output') }, () => workspace.write('runs/run-1/output/report.txt', 'artifact'));
   assert.equal(await workspace.read('runs/run-1/output/report.txt'), 'artifact');
   assert.equal(await workspace.resolve('.lab-agent/state.json', { write: true, internal: true }), path.join(root, '.lab-agent/state.json'));
 });
@@ -198,7 +198,7 @@ test('malformed YAML and skill symlink escapes fail during discovery', async t =
   await rm(path.join(root, '.agents/skills/invalid'), { recursive: true });
   await writeFile(path.join(outside, 'SKILL.md'), '---\nname: outside\ndescription: test\n---\nbody');
   await symlink(outside, path.join(root, '.agents/skills/outside'));
-  await assert.rejects(discoverSkills(workspace), /escapes/);
+  assert.deepEqual(await discoverSkills(workspace), []);
 });
 
 test('registered Python receives active output context and literal argv; arbitrary programs are unavailable', async t => {
@@ -274,7 +274,10 @@ test('MCP startup ambiguity closes already connected servers', async t => {
   const source = path.join(root, 'mcp.mjs');
   const stopped = path.join(root, 'stopped');
   await writeFile(source, stdioServerSource());
-  await assert.rejects(connectMcp({ first: { transport: 'stdio', command: process.execPath, args: [source], env: { MCP_STOP_FILE: stopped, MCP_NAMES: 'a.b,a_b' } } }), /Ambiguous/);
+  await assert.rejects(async () => {
+    const connection = await connectMcp({ first: { transport: 'stdio', command: process.execPath, args: [source], env: { MCP_STOP_FILE: stopped, MCP_NAMES: 'a.b,a_b' } } });
+    await connection.close();
+  }, /Ambiguous/);
   await eventually(async () => assert.equal(await readFile(stopped, 'utf8'), 'closed'));
   await assert.rejects(connectMcp({ invalid: { transport: 'http', url: 'file:///tmp/mcp' } }), /HTTP/);
 });

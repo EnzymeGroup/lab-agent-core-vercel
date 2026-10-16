@@ -1,14 +1,14 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
-import { basename, extname, resolve } from 'node:path';
+import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { createUIMessageStreamResponse } from 'ai';
 import { z } from 'zod';
 import type { LabAgent } from './agent.js';
-import { BusyError, errorMessage, InputError, NotFoundError, storagePath, within } from './storage.js';
+import { BusyError, errorMessage, InputError, NotFoundError, storagePath } from './storage.js';
+import { importUpload, listUploads, openArtifact, previewArtifact, uploadExtensions, uploadLimit } from './files.js';
 
 const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
@@ -59,16 +59,13 @@ export function createRequestHandler(agent: LabAgent, options: { origin: string;
           const id = url.searchParams.get('id') ?? '';
           return json({ run: await agent.runs.load(id), check: await agent.runs.report(id) });
         }
+        if (request.method === 'GET' && url.pathname === '/api/uploads') return json({ files: await listUploads(agent.config.root), maxBytes: uploadLimit, extensions: uploadExtensions });
+        if (request.method === 'POST' && url.pathname === '/api/uploads') return json(await importUpload(agent.config.root, url.searchParams.get('name') ?? '', request), 201);
+        if (request.method === 'GET' && url.pathname === '/api/preview') return json(await previewArtifact(agent, url.searchParams.get('runId') ?? '', url.searchParams.get('path') ?? ''));
         if (request.method === 'GET' && url.pathname === '/api/artifact') {
-          const run = await agent.runs.load(url.searchParams.get('runId') ?? '');
-          const path = url.searchParams.get('path') ?? '';
-          if (!run.artifacts.includes(path)) throw new NotFoundError('Unknown artifact.');
-          if (!path.startsWith('output/')) throw new InputError('Artifact path must be inside output/.');
-          const file = await storagePath(agent.config.root, `runs/${run.id}/${path}`);
-          if (!within(resolve(run.directory, 'output'), file)) throw new InputError('Artifact escapes this run output directory.');
-          if (!(await stat(file)).isFile()) throw new InputError('Artifact must be a regular file.');
-          return new Response(Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array>, { headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store',
-            'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(basename(file))}`, 'X-Content-Type-Options': 'nosniff' } });
+          const artifact = await openArtifact(agent, url.searchParams.get('runId') ?? '', url.searchParams.get('path') ?? '');
+          return new Response(Readable.toWeb(artifact.handle.createReadStream()) as ReadableStream<Uint8Array>, { headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store',
+            'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(artifact.name)}`, 'X-Content-Type-Options': 'nosniff' } });
         }
         if (request.method === 'POST' && url.pathname === '/api/sessions') {
           const input = parseInput(z.object({ title: z.string().max(160).optional() }), await body(request));
@@ -76,11 +73,12 @@ export function createRequestHandler(agent: LabAgent, options: { origin: string;
         }
         if (request.method === 'POST' && url.pathname === '/api/chat') {
           const input = parseInput(z.object({ sessionId: z.string(), mode: z.enum(['chat', 'task']).default('chat'),
+            workflowId: z.string().optional(), parentRunId: z.string().optional(),
             messages: z.array(z.object({ id: z.string(), role: z.string(), parts: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()) }).passthrough()).min(1),
           }), await body(request));
           const last = input.messages.at(-1)!;
           if (last.role !== 'user' || last.parts.some(part => part.type !== 'text')) throw new InputError('Send a user message containing text parts only.');
-          const turn = await agent.streamTurn({ sessionId: input.sessionId, messageId: last.id, message: last.parts.map(part => part.text ?? '').join('\n'), mode: input.mode });
+          const turn = await agent.streamTurn({ sessionId: input.sessionId, messageId: last.id, message: last.parts.map(part => part.text ?? '').join('\n'), mode: input.mode, workflowId: input.workflowId, parentRunId: input.parentRunId });
           return createUIMessageStreamResponse({ stream: turn.stream, headers: { 'x-lab-session-id': turn.sessionId, ...(turn.runId ? { 'x-lab-run-id': turn.runId } : {}) } });
         }
         if (request.method === 'POST' && url.pathname === '/api/cancel') return json({ canceled: agent.cancel() });
@@ -101,7 +99,7 @@ export function createRequestHandler(agent: LabAgent, options: { origin: string;
     } catch (error) {
       const status = error instanceof BusyError ? 409 : error instanceof NotFoundError ? 404 :
         error instanceof InputError || error instanceof URIError ? 400 : 500;
-      return json({ error: { message: errorMessage(error) } }, status);
+      return json({ error: { message: errorMessage(error, agent.config.env) } }, status);
     }
   };
 }

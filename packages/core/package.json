@@ -1,6 +1,6 @@
 {
   "name": "lab-agent-core-vercel",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Composable scientific Agents with AI SDK, persistent sessions, Python tools and independent delivery checks",
   "license": "MIT",
   "type": "module",

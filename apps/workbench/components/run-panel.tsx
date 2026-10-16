@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, duration, errorMessage, formatDate, responseError, type AgentState, type CheckReport, type RunRecord } from '../lib/api';
+import Preview from './artifact-preview';
+import RunEvidence from './run-evidence';
 
 const deliveryLabel = { not_checked: 'Not checked', passed: 'Passed', partial: 'Partial', failed: 'Failed' };
 
@@ -21,6 +23,7 @@ export default function RunPanel({ token, state, sessionId, onRefresh, onSelectS
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState('');
+  const [preview, setPreview] = useState<{ runId: string; path: string }>();
   const previousSession = useRef(sessionId);
   const requestId = useRef(0);
   const visibleRuns = state?.runs.filter(run => allRuns || !sessionId || run.session.id === sessionId) ?? [];
@@ -104,10 +107,12 @@ export default function RunPanel({ token, state, sessionId, onRefresh, onSelectS
         <section className="delivery-section" aria-label="Delivery check"><div className="section-heading"><h3>Delivery check</h3><button onClick={() => { void recheck(); }} disabled={checking || state?.busy || run.execution === 'running'}>{checking ? 'Checking…' : 'Recheck'}</button></div><p className="section-note">Execution and delivery are tracked separately. Rechecking runs the configured validator without a model call.</p>{run.delivery === 'not_checked' && <p className="unchecked-note">No completed delivery check is recorded.</p>}{check && <><p className={`check-summary delivery-${check.status}`}>Delivery {deliveryLabel[check.status].toLowerCase()}</p>{check.checks.length ? <table className="checks-table"><caption className="sr-only">Delivery checks</caption><thead><tr><th scope="col">Check</th><th scope="col">Status</th></tr></thead><tbody>{check.checks.map((item, index) => <tr key={index}><th scope="row">{item.name}{Object.keys(item).some(key => !['name', 'status'].includes(key)) && <details><summary>Details</summary><pre>{JSON.stringify(item, null, 2)}</pre></details>}</th><td>{item.status}</td></tr>)}</tbody></table> : <p className="section-note">The checker reported no individual checks.</p>}{check.issues.length > 0 && <ul className="check-issues">{check.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}</>}
         </section>
 
-        <section className="artifact-section" aria-label="Output files"><div className="section-heading"><h3>Output files</h3><span className="count-label">{run.artifacts.length}</span></div>{run.artifacts.length ? <ul className="artifact-list">{run.artifacts.map(path => <li key={path}><span className="artifact-name" title={path}>{path}</span><button aria-label={`Download ${path}`} onClick={() => { void download(path); }} disabled={!!downloading}>{downloading === path ? 'Saving…' : '↓ Save'}</button></li>)}</ul> : <p className="section-note">No output files registered{run.execution === 'running' ? ' yet' : ''}.</p>}</section>
+        <section className="artifact-section" aria-label="Output files"><div className="section-heading"><h3>Output files</h3><span className="count-label">{run.artifacts.length}</span></div>{run.artifacts.length ? <><p className="section-note">Select a file to preview it, or save the original.</p><ul className="artifact-list">{run.artifacts.map(path => <li key={path}><button className="artifact-name" title={`Preview ${path}`} aria-label={`Preview ${path}`} onClick={() => setPreview({ runId: run.id, path })}>{path}</button><button aria-label={`Download ${path}`} onClick={() => { void download(path); }} disabled={!!downloading}>{downloading === path ? 'Saving…' : '↓ Save'}</button></li>)}</ul></> : <p className="section-note">No output files registered{run.execution === 'running' ? ' yet' : ''}.</p>}</section>
+        <RunEvidence run={run} />
         {run.text && <details className="run-response"><summary>Final response</summary><div className="message-text">{run.text}</div></details>}
         <details className="run-storage"><summary>Storage path</summary><code className="break-anywhere">{run.directory}</code></details>
       </section>}
     </div>
+    {preview && <Preview token={token} runId={preview.runId} path={preview.path} onClose={() => setPreview(undefined)} />}
   </>;
 }

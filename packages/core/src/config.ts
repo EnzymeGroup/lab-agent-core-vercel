@@ -1,10 +1,16 @@
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { realpath, lstat, readFile } from 'node:fs/promises';
-import { loadEnvFile } from 'node:process';
+import { parseEnv } from 'node:util';
 import { createJiti } from 'jiti';
 import type { AgentConfig } from './types.js';
+import { withModelEnvironment } from './models.js';
+import { within } from './storage.js';
 
-export function defineAgent<const T extends AgentConfig>(config: T): T {
+export interface AgentConfigContext { root: string; env: NodeJS.ProcessEnv }
+export type AgentConfigFactory = (context: AgentConfigContext) => AgentConfig | Promise<AgentConfig>;
+
+export function defineAgent<const T extends AgentConfig | AgentConfigFactory>(config: T): T {
+  if (typeof config === 'function') return config;
   if (!config.root || !config.model) throw new Error('Agent config requires root and a native AI SDK model.');
   const limits = config.limits;
   for (const [key, value] of Object.entries(limits ?? {})) {
@@ -22,22 +28,30 @@ export function defineAgent<const T extends AgentConfig>(config: T): T {
   return config;
 }
 
+/** Process environment wins over .env, matching normal explicit CLI overrides. */
+export async function loadProjectEnvironment(projectRoot: string): Promise<NodeJS.ProcessEnv> {
+  const file = resolve(projectRoot, '.env');
+  const info = await lstat(file).catch(error => { if (error.code === 'ENOENT') return undefined; throw error; });
+  if (info?.isSymbolicLink()) throw new Error('.env must not be a symlink.');
+  if (info && !info.isFile()) throw new Error('.env must be a regular file.');
+  if (info && info.size > 131_072) throw new Error('.env exceeds 128 KiB.');
+  return { ...(info ? parseEnv(await readFile(file, 'utf8')) : {}), ...process.env };
+}
+
 /** Config is executable trusted project code. Never accept a browser-supplied config path. */
 export async function loadAgentConfig(projectRoot: string, configFile = 'agent.config.ts'): Promise<AgentConfig> {
   const root = await realpath(resolve(projectRoot));
-  const envFile = resolve(root, '.env');
-  const env = await lstat(envFile).catch(error => {
-    if (error.code === 'ENOENT') return undefined;
-    throw error;
-  });
-  if (env?.isSymbolicLink()) throw new Error('.env must not be a symlink.');
-  if (env?.isFile()) loadEnvFile(envFile);
+  const env = await loadProjectEnvironment(root);
   const file = resolve(root, configFile);
+  if (!within(root, file)) throw new Error('Config file must be inside the selected project.');
   const jiti = createJiti(import.meta.url, { moduleCache: false });
-  const imported = await jiti.import<{ default?: AgentConfig }>(file);
-  const config = defineAgent(imported.default ?? imported as unknown as AgentConfig);
+  const config = await withModelEnvironment(env, async () => {
+    const imported = await jiti.import<{ default?: AgentConfig | AgentConfigFactory }>(file);
+    const exported = imported.default ?? imported as unknown as AgentConfig | AgentConfigFactory;
+    return defineAgent(typeof exported === 'function' ? await exported({ root, env }) : exported);
+  });
   if (await realpath(resolve(config.root)) !== root) throw new Error('agent.config.ts root must match the selected project root.');
-  return { ...config, root };
+  return { ...config, root, env: { ...env, ...config.env }, provenance: { ...config.provenance, code: [...new Set([...(config.provenance?.code ?? []), relative(root, file)])] } };
 }
 export async function readInstructions(config: AgentConfig): Promise<string> {
   if (typeof config.instructions === 'object') return config.instructions.text;

@@ -1,5 +1,5 @@
-# Sequence summary
+# Python-first FASTA Agent
 
-Install the package in this directory (`npm install`), copy `.env.example` to `.env`, and set a model ID and credential. Run `python3 workflows/run.py` or `lab-agent dev --root .`. The Python driver invokes the installed CLI; it does not implement another Agent runtime. The fixture demo from the repository root needs no provider credential (`npm run demo`).
+Install the current Core tarball (`npm install /absolute/path/lab-agent-core-vercel-0.1.0-rc.2.tgz`), copy .env.example to .env and set the model ID and credential. Run `npx lab-agent doctor` before inference, then `python3 workflows/run.py` or `npm run dev`. The driver invokes the same persistent installed CLI. `doctor --probe-model` makes an explicit, potentially billable connectivity request.
 
-The input has four FASTA records, including a duplicate identifier and an empty sequence. The registered stdlib Python tool produces summary.json and report.md under runs/<id>/output. An independent validator reconstructs all records and counts from source, checks its SHA256 digest, and rejects modified results. The scripts can also run directly with AGENT_OUTPUT_DIR set to a temporary directory. No biological activity claim is made.
+The source has four FASTA records, including a duplicate identifier and an empty sequence. A registered stdlib Python tool creates summary.json/report.md in the current task output, and an independent checker reconstructs source values and rejects altered output. Source inputs and relevant code are fingerprinted; rechecks preserve original evidence. This is descriptive arithmetic, not biological function validation. Config/Python/native tools remain trusted host code. One project permits one active operation.

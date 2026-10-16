@@ -228,6 +228,104 @@ time { font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
 .mobile-tabs { display: none; }
 
+.input-files { border-top: 1px solid var(--line); max-height: 48%; overflow: auto; flex-shrink: 0; font-size: 12px; }
+.input-files > summary { padding: 13px 18px; font-weight: 550; position: sticky; top: 0; background: var(--canvas); z-index: 1; }
+.input-files > summary span { color: var(--muted); margin-left: 9px; }
+.input-file-body { padding: 0 16px 15px; }
+.input-file-body > p { font-size: 11px; color: var(--muted); line-height: 1.7; }
+.input-file-body > label { display: block; font-weight: 550; margin-bottom: 7px; font-size: 11px; }
+.input-file-body input[type='file'] { width: 100%; min-height: 44px; font-size: 11px; overflow: hidden; }
+.input-file-body input[type='file']::file-selector-button { color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; min-height: 44px; padding: 8px; cursor: pointer; font: inherit; margin-right: 8px; }
+.input-file-body input[type='file']:disabled::file-selector-button { opacity: .5; cursor: not-allowed; }
+.input-file-body p.file-limits { font-size: 10px; margin-block: 7px 12px; overflow-wrap: anywhere; }
+.selected-input { overflow-wrap: anywhere; }
+.input-error { color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+.input-error p { margin: 8px 0; }
+.input-file-body p.input-notice { color: var(--accent); }
+.uploaded-files { list-style: none; padding: 0; margin: 14px 0 0; }
+.uploaded-files > li { border-top: 1px solid var(--line); padding-block: 12px; }
+.uploaded-files strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.input-file-meta { display: block; color: var(--muted); font-size: 10px; margin: 3px 0 7px; }
+.input-path { display: block; font-size: 10px; user-select: all; overflow-wrap: anywhere; line-height: 1.7; padding-block: 5px; }
+.input-actions { display: flex; gap: 6px; margin-top: 8px; }
+.input-actions button { flex: 1; padding-inline: 7px; font-size: 10px; }
+.input-integrity { color: var(--muted); font-size: 10px; }
+.input-integrity code { overflow-wrap: anywhere; }
+.capabilities-button { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 0; border-radius: 0; border-top: 1px solid var(--line); padding: 13px 18px; font-size: 12px; text-align: left; background: transparent; }
+.capabilities-button span { font-size: 9px; color: var(--muted); }
+.artifact-list button.artifact-name { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; padding: 7px 0; border: 0; flex: 1; min-width: 0; text-align: left; border-radius: 3px; }
+.workbench-dialog { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 0; width: min(860px, calc(100vw - 40px)); max-height: min(88dvh, 1050px); box-shadow: 0 18px 60px #0003; }
+.workbench-dialog::backdrop { background: #06161682; }
+.dialog-heading { position: sticky; top: 0; background: var(--surface); padding: 17px 23px; display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 1px solid var(--line); z-index: 1; }
+.dialog-heading > div { min-width: 0; }
+.dialog-heading h2 { font-size: 16px; margin: 0 0 4px; }
+.dialog-heading p { color: var(--muted); font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.dialog-heading button { flex-shrink: 0; }
+.dialog-body { padding: 20px 24px 27px; overflow-wrap: anywhere; }
+.dialog-body > section + section { padding-top: 19px; margin-top: 22px; border-top: 1px solid var(--line); }
+.dialog-body h3 { font-size: 14px; }
+.capability-facts { margin: 0; font-size: 12px; }
+.capability-facts > div { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 18px; padding: 7px 0; }
+.capability-facts dt { color: var(--muted); }
+.capability-facts dd { margin: 0; }
+.capability-list { list-style: none; margin: 0; padding: 0; }
+.capability-list > li { padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.capability-list > li:last-child { border-bottom: 0; }
+.capability-list p { color: var(--muted); margin: 7px 0 0; line-height: 1.7; }
+.capability-list code { font-size: 11px; }
+.capability-list summary { color: var(--accent); font-size: 11px; }
+.capability-list pre { background: var(--canvas); padding: 14px; border: 1px solid var(--line); border-radius: 5px; max-height: 400px; overflow: auto; }
+.mcp-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.capability-list p.input-error { color: var(--danger); }
+.preview-meta { color: var(--muted); display: flex; gap: 16px; font-size: 11px; margin-bottom: 16px; }
+.preview-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.preview-truncated { padding: 12px; background: var(--warning-soft); color: var(--warning); font-size: 12px; border-radius: 4px; }
+.preview-table-scroll { max-width: 100%; overflow-x: auto; }
+.preview-table { min-width: 100%; width: max-content; border-collapse: collapse; font-size: 12px; }
+.preview-table caption { text-align: left; color: var(--muted); font-size: 11px; padding: 0 0 12px; }
+.preview-table th, .preview-table td { padding: 10px 13px; border: 1px solid var(--line); text-align: left; white-space: pre-wrap; max-width: 330px; overflow-wrap: anywhere; }
+.preview-table th { background: var(--canvas); font-weight: 500; }
+.artifact-text-preview { font-size: 12px; line-height: 1.8; padding: 16px; margin: 0; background: var(--canvas); border: 1px solid var(--line); border-radius: 5px; }
+.markdown-preview { font-size: 13px; line-height: 1.8; }
+.markdown-preview h3 { font-size: 21px; margin: 0 0 15px; }
+.markdown-preview h4 { font-size: 15px; margin: 17px 0 10px; }
+.markdown-preview p { margin: 5px 0; white-space: pre-wrap; }
+.markdown-preview pre { border: 1px solid var(--line); background: var(--canvas); padding: 15px; border-radius: 5px; }
+.markdown-space { height: 8px; }
+.markdown-item { padding-left: 8px; }
+.image-preview { background: var(--canvas); border: 1px solid var(--line); padding: 12px; border-radius: 5px; display: grid; place-items: center; }
+.image-preview img { max-width: 100%; max-height: 65dvh; object-fit: contain; }
+.evidence-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
+.evidence-section > h3 { margin-bottom: 12px; }
+.evidence-section h4 { font-size: 11px; margin: 16px 0 8px; }
+.evidence-details { color: var(--muted); font-size: 11px; }
+.hash-value { display: block; overflow-wrap: anywhere; font-size: 10px; line-height: 1.8; }
+.evidence-hashes { list-style: none; padding: 0; margin: 0; }
+.evidence-hashes li { padding: 9px 0; border-bottom: 1px solid var(--line); }
+.evidence-hashes li > div { display: flex; justify-content: space-between; gap: 10px; }
+.evidence-hashes code { font-size: 10px; overflow-wrap: anywhere; }
+.evidence-hashes span { white-space: nowrap; font-size: 10px; }
+.check-history { margin: 0; padding-left: 17px; }
+.check-history > li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.check-history strong { color: var(--text); font-weight: 550; }
+.check-history time, .check-history > li > code { display: block; margin-top: 6px; overflow-wrap: anywhere; font-size: 10px; }
+.evidence-changes { background: var(--warning-soft); color: var(--warning); border-radius: 4px; padding: 10px; font-size: 11px; overflow-wrap: anywhere; }
+.evidence-changes p { margin: 4px 0; }
+
+@media (max-width: 600px) {
+  .workbench-dialog { width: calc(100vw - 20px); max-height: 92dvh; }
+  .dialog-heading { padding: 13px 15px; gap: 10px; }
+  .dialog-heading h2 { font-size: 15px; }
+  .dialog-heading p { font-size: 10px; }
+  .dialog-heading button { font-size: 12px; }
+  .dialog-body { padding: 17px 15px 23px; }
+  .capability-facts > div { grid-template-columns: 75px minmax(0, 1fr); gap: 12px; }
+  .capability-facts, .capability-list > li { font-size: 12px; }
+  .input-file-body { padding-inline: 18px; }
+  .input-actions button { font-size: 12px; }
+  .input-files { max-height: 55%; }
+}
+
 @media (min-width: 1600px) {
   .workspace { grid-template-columns: 250px minmax(0, 1fr) 370px; }
 }

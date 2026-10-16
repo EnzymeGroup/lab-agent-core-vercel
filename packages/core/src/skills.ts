@@ -6,10 +6,11 @@ import type { Skill } from './types.js';
 import type { Workspace } from './workspace.js';
 
 async function frontmatter(workspace: Workspace, file: string): Promise<Record<string, unknown>> {
-  const candidate = await workspace.resolve(file);
+  const candidate = await workspace.resolve(file, { readRoots: false });
   const handle = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!(await handle.stat()).isFile()) throw new Error(`Skill is not a regular file: ${file}`);
+    const info = await handle.stat();
+    if (!info.isFile() || info.nlink > 1) throw new Error(`Skill must be a regular file without hard links: ${file}`);
     const buffer = Buffer.alloc(65_536);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     const text = buffer.subarray(0, bytesRead).toString('utf8').replace(/^\uFEFF/u, '');
@@ -24,7 +25,7 @@ async function frontmatter(workspace: Workspace, file: string): Promise<Record<s
 /** Only name/description/path are retained; full instructions load on demand. */
 export async function discoverSkills(workspace: Workspace, skillsDir = '.agents/skills'): Promise<Skill[]> {
   let entries;
-  try { entries = await workspace.list(skillsDir); }
+  try { entries = await workspace.list(skillsDir, { readRoots: false }); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
@@ -56,5 +57,5 @@ export async function discoverSkills(workspace: Workspace, skillsDir = '.agents/
 export async function loadSkill(workspace: Workspace, skills: readonly Skill[], name: string, maxBytes?: number): Promise<string> {
   const skill = skills.find(candidate => candidate.name === name);
   if (!skill) throw new Error(`Unknown skill: ${name}`);
-  return workspace.read(skill.path, maxBytes);
+  return workspace.read(skill.path, maxBytes, { readRoots: false });
 }

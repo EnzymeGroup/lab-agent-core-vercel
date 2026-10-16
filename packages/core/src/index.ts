@@ -1,4 +1,5 @@
-export { defineAgent, loadAgentConfig } from './config.js';
+export { defineAgent, loadAgentConfig, type AgentConfigContext, type AgentConfigFactory } from './config.js';
+export { inspectConfig, doctor, describeTools } from './diagnostics.js';
 export { createAgent, RunError, projectContext, type LabAgent } from './agent.js';
 export { modelFromEnv, modelInfo } from './models.js';
 export { createWorkspace, getExecutionContext, runWithExecutionContext, type Workspace, type ExecutionContext } from './workspace.js';

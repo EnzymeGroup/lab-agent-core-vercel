@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage, formatDate, type AgentState, type SessionRecord } from '../lib/api';
 import Conversation from '../components/conversation';
 import RunPanel from '../components/run-panel';
+import InputFiles from '../components/input-files';
+import Capabilities from '../components/capabilities';
 
 type Panel = 'conversation' | 'sessions' | 'artifacts';
 
@@ -19,6 +21,8 @@ export default function Workbench() {
   const [creating, setCreating] = useState(false);
   const [panel, setPanel] = useState<Panel>('conversation');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [showCapabilities, setShowCapabilities] = useState(false);
+  const [draftReference, setDraftReference] = useState<{ id: string; text: string }>();
   const selection = useRef(0);
   const selectedId = useRef('');
   const initialized = useRef(false);
@@ -101,6 +105,7 @@ export default function Workbench() {
 
   async function newSession() {
     if (!token || creating) return;
+    setDraftReference(undefined);
     setCreating(true);
     setSessionError('');
     try {
@@ -111,13 +116,14 @@ export default function Workbench() {
       setSessionId(record.id);
       setPanel('conversation');
       await refreshState();
+      return record;
     } catch (error) { setSessionError(errorMessage(error)); }
     finally { setCreating(false); }
   }
 
   function selectSession(id: string) {
     selectedId.current = id;
-    if (id !== sessionId) { setSession(undefined); setSessionId(id); }
+    if (id !== sessionId) { setDraftReference(undefined); setSession(undefined); setSessionId(id); }
     setPanel('conversation');
   }
 
@@ -126,6 +132,12 @@ export default function Workbench() {
     document.documentElement.dataset.theme = next;
     setTheme(next);
     try { localStorage.setItem('lab-agent-theme', next); } catch { /* Theme still works without persistence. */ }
+  }
+
+  async function useInput(path: string) {
+    if (!sessionId && !await newSession()) return;
+    setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}` });
+    setPanel('conversation');
   }
 
   return (
@@ -153,17 +165,19 @@ export default function Workbench() {
             {state?.sessions.length === 0 && <p className="pane-note">No sessions yet. Create one to start a conversation or a task.</p>}
             {state?.sessions.map(item => <button className={`session-item ${sessionId === item.id ? 'selected' : ''}`} key={item.id} onClick={() => selectSession(item.id)} aria-current={sessionId === item.id ? 'true' : undefined}><span className="session-title">{item.title || 'Untitled session'}</span><span className="session-meta"><time dateTime={item.updatedAt}>{formatDate(item.updatedAt)}</time>{item.state !== 'idle' && <span className={`small-status ${item.state}`}>{item.state}</span>}</span></button>)}
           </div>
-          <details className="resources"><summary>Tools & skills <span>{(state?.tools.length ?? 0) + (state?.skills.length ?? 0)}</span></summary><div className="resource-content"><h3>Tools</h3>{state?.tools.length ? <ul>{state.tools.map(name => <li key={name}><code>{name}</code></li>)}</ul> : <p>No tools configured.</p>}<h3>Skills</h3>{state?.skills.length ? <ul>{state.skills.map(skill => <li key={skill.path}><strong>{skill.name}</strong><p>{skill.description}</p></li>)}</ul> : <p>No skills discovered.</p>}</div></details>
-          <div className="sidebar-footer">Local project · persistent history</div>
+          <InputFiles token={token} busy={!!state?.busy} onUse={path => { void useInput(path); }} />
+          <button className="capabilities-button" onClick={() => setShowCapabilities(true)} disabled={!state}>Capabilities <span>{(state?.tools.length ?? 0) + (state?.skills.length ?? 0)} tools & skills</span></button>
+          <div className="sidebar-footer">One project · one active operation</div>
         </aside>
 
         <main className="conversation-pane" id="conversation" tabIndex={-1}>
           {sessionError && <div className="inline-error" role="alert"><p>{sessionError}</p>{sessionId && <button onClick={() => { void loadSession(sessionId); }}>Retry loading session</button>}</div>}
-          {creating ? <div className="empty-state" role="status"><h1>Creating session…</h1><p>Preparing a new conversation.</p></div> : loadingSession && !session ? <div className="empty-state" role="status"><h1>Loading session…</h1><p>Restoring the saved conversation.</p></div> : session && token ? <Conversation key={session.id} token={token} session={session} state={state} onStateRefresh={refreshState} onSessionUpdate={record => { if (selectedId.current === record.id) setSession(record); }} /> : <div className="empty-state"><span className="empty-symbol" aria-hidden="true">↗</span><h1>Your project workspace</h1><p>Start a session to ask a question or run a task. Task outputs and delivery checks appear alongside the conversation.</p><button className="primary" onClick={() => { void newSession(); }} disabled={!state || !!connectionError || creating}>{creating ? 'Creating…' : 'New session'}</button><p className="empty-hint">Task mode creates a tracked run. Chat mode keeps a conversation.</p></div>}
+          {creating ? <div className="empty-state" role="status"><h1>Creating session…</h1><p>Preparing a new conversation.</p></div> : loadingSession && !session ? <div className="empty-state" role="status"><h1>Loading session…</h1><p>Restoring the saved conversation.</p></div> : session && token ? <Conversation key={session.id} token={token} session={session} state={state} draftReference={draftReference} onStateRefresh={refreshState} onSessionUpdate={record => { if (selectedId.current === record.id) setSession(record); }} /> : <div className="empty-state"><span className="empty-symbol" aria-hidden="true">↗</span><h1>Your project workspace</h1><p>Start a session to ask a question or run a task. Task outputs and delivery checks appear alongside the conversation.</p><button className="primary" onClick={() => { void newSession(); }} disabled={!state || !!connectionError || creating}>{creating ? 'Creating…' : 'New session'}</button><p className="empty-hint">Task mode creates a tracked run. Chat mode keeps a conversation.</p></div>}
         </main>
 
         <aside className="artifacts-pane" aria-label="Runs and artifacts"><RunPanel token={token} state={state} sessionId={sessionId} onRefresh={refreshState} onSelectSession={selectSession} /></aside>
       </div>
+      {showCapabilities && state && <Capabilities state={state} onClose={() => setShowCapabilities(false)} />}
     </div>
   );
 }

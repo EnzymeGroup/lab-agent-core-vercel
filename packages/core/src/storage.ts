@@ -136,9 +136,9 @@ export async function acquireOperation(root: string): Promise<() => Promise<void
   }
   throw new BusyError();
 }
-export function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown, env?: NodeJS.ProcessEnv): string {
   let message = error instanceof Error ? error.message : String(error);
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const [key, value] of [...Object.entries(process.env), ...Object.entries(env ?? {})]) {
     if (value && value.length >= 6 && /(?:API_KEY|TOKEN|PASSWORD|SECRET)$/.test(key)) message = message.split(value).join('[redacted]');
   }
   return message;

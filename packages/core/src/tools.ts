@@ -93,12 +93,12 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
     tools[name] = limitTool(native, maxBytes);
   };
   register('readFile', tool({
-    description: 'Read a UTF-8 text file inside the project workspace.',
+    description: 'Read an allowed UTF-8 project file. Sensitive files, agent metadata and paths outside configured readRoots are unavailable.',
     inputSchema: z.object({ path: z.string().min(1) }),
     execute: ({ path: file }) => workspace.read(file, maxBytes),
   }));
   register('writeFile', tool({
-    description: 'Write a UTF-8 file inside the project. Put task deliverables in AGENT_OUTPUT_DIR; agent metadata and run records are protected.',
+    description: 'During an active task, write a UTF-8 deliverable in its current AGENT_OUTPUT_DIR. Development mode additionally permits explicitly configured writeRoots. Chat and direct native calls have no implicit write access.',
     inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
     execute: async ({ path: file, content }, { abortSignal }) => {
       abortSignal?.throwIfAborted();
@@ -108,7 +108,7 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
     },
   }));
   register('listFiles', tool({
-    description: 'List immediate files and directories inside the project workspace.',
+    description: 'List immediate allowed project files and directories. Sensitive files, metadata and disallowed readRoots are hidden.',
     inputSchema: z.object({ path: z.string().default('.') }),
     execute: ({ path: directory }) => workspace.list(directory),
   }));
@@ -128,14 +128,14 @@ export function createTools(workspace: Workspace, config: AgentConfig, skills: r
           throw new Error('Python argv exceeds its limit or contains NUL bytes.');
         }
         const script = scripts[name];
-        const scriptPath = await workspace.resolve(script.path);
+        const scriptPath = await workspace.resolve(script.path, { internal: true });
         if (!scriptPath.endsWith('.py') || !(await stat(scriptPath)).isFile()) throw new Error('Registered Python path must be a regular .py file inside the project.');
         const context = getExecutionContext();
-        const outputDirectory = context?.outputDirectory ? await workspace.resolve(context.outputDirectory) : '';
+        const outputDirectory = context?.outputDirectory ? await workspace.resolve(context.outputDirectory, { internal: true }) : '';
         const runDirectory = outputDirectory ? path.dirname(outputDirectory) : '';
         return runCommand(config.python?.command ?? 'python3', [...(config.python?.args ?? []), scriptPath, ...args], {
           cwd: workspace.root,
-          env: { AGENT_ROOT: workspace.root, AGENT_RUN_ID: context?.runId ?? '', AGENT_RUN_DIR: runDirectory, AGENT_OUTPUT_DIR: outputDirectory },
+          env: { ...config.env, AGENT_ROOT: workspace.root, AGENT_RUN_ID: context?.runId ?? '', AGENT_RUN_DIR: runDirectory, AGENT_OUTPUT_DIR: outputDirectory },
           signal: abortSignal,
           timeoutMs: script.timeoutMs ?? config.limits?.timeoutMs ?? 120_000,
           // Reserve enough room for the result envelope; limitTool verifies the

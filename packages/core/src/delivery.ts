@@ -3,11 +3,25 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rm } from 'node:fs/promises';
 import { z } from 'zod';
-import type { AgentConfig, CheckReport, RunRecord } from './types.js';
+import type { AgentConfig, CheckObservation, CheckReport, RunRecord } from './types.js';
 import { acquireOperation, atomicJSON, atomicText, errorMessage, opaqueId, readJSON, storagePath } from './storage.js';
 import { runCommand } from './process.js';
+import { changedHashes, createProvenance, hashArtifacts, hashCode, hashInputs, sha256 } from './provenance.js';
+
+const fileHashSchema = z.object({ path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/u), bytes: z.number().int().nonnegative() });
+const observationSchema = z.object({
+  id: z.string(), kind: z.enum(['initial', 'recheck']), checkedAt: z.iso.datetime(), delivery: z.enum(['not_checked', 'passed', 'partial', 'failed']),
+  report: z.string().nullable(), log: z.string().nullable(), artifactHashes: z.array(fileHashSchema),
+  inputChanges: z.array(z.string()), codeChanges: z.array(z.string()), artifactChanges: z.array(z.string()), validationHash: z.string().optional(),
+});
 
 const runSchema = z.object({
+  schemaVersion: z.literal(2).optional(),
+  provenance: z.object({ coreVersion: z.string(), aiSdkVersion: z.string(), inputs: z.array(fileHashSchema), code: z.array(fileHashSchema),
+    configHash: z.string(), validationHash: z.string(), artifacts: z.array(fileHashSchema) }).optional(),
+  originalDelivery: observationSchema.optional(), checks: z.array(observationSchema).optional(),
+  pendingCheck: z.object({ id: z.string(), startedAt: z.iso.datetime(), kind: z.enum(['initial', 'recheck']) }).optional(),
+  workflowId: z.string().optional(), parentRunId: z.string().optional(),
   id: z.string(), directory: z.string(), task: z.string(), startedAt: z.iso.datetime(), finishedAt: z.iso.datetime().optional(),
   execution: z.enum(['running', 'completed', 'failed', 'aborted']), delivery: z.enum(['not_checked', 'passed', 'partial', 'failed']),
   session: z.object({ id: z.string(), file: z.string().optional() }), model: z.object({ provider: z.string(), id: z.string() }).optional(),
@@ -55,13 +69,16 @@ export function createRunStore(config: AgentConfig) {
   };
   return {
     directory, save, load,
-    async create(task: string, sessionId: string): Promise<RunRecord> {
+    async create(task: string, sessionId: string, links: { workflowId?: string; parentRunId?: string } = {}): Promise<RunRecord> {
+      if (links.workflowId) opaqueId(links.workflowId);
+      if (links.parentRunId) opaqueId(links.parentRunId);
+      const provenance = await createProvenance(config);
       const startedAt = new Date().toISOString();
       const id = `${startedAt.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
       const output = await storagePath(root, `runs/${id}/output`, true);
       await mkdir(output, { mode: 0o700 });
       const model = typeof config.model === 'string' ? { provider: 'gateway', id: config.model } : { provider: config.model.provider, id: config.model.modelId };
-      const record: RunRecord = { id, directory: await directory(id), task, startedAt, execution: 'running', delivery: 'not_checked',
+      const record: RunRecord = { schemaVersion: 2, provenance, ...links, id, directory: await directory(id), task, startedAt, execution: 'running', delivery: 'not_checked',
         session: { id: sessionId, file: resolve(root, `.lab-agent/sessions/${sessionId}.json`) }, model, artifacts: [] };
       await save(record); return record;
     },
@@ -92,23 +109,64 @@ export function createRunStore(config: AgentConfig) {
     },
   };
 }
-export async function checkRunUnlocked(config: AgentConfig, value: string, signal?: AbortSignal): Promise<RunRecord> {
+export async function checkRunUnlocked(config: AgentConfig, value: string, signal?: AbortSignal, options: { initial?: boolean } = {}): Promise<RunRecord> {
   const store = createRunStore(config);
   const run = await store.load(value);
   if (run.execution === 'running') throw new Error('A running task cannot be rechecked.');
+  if (run.pendingCheck) await interruptCheckUnlocked(config, run);
   const directory = await storagePath(config.root, `runs/${run.id}`);
   const check = resolve(directory, 'check.json');
   const log = resolve(directory, 'validation.log');
-  try { run.artifacts = await listArtifacts(config.root, run.id); }
+  run.pendingCheck = { id: randomUUID(), startedAt: new Date().toISOString(), kind: options.initial ? 'initial' : 'recheck' };
+  // A terminated recheck must never leave its previous verdict as current.
+  run.delivery = 'not_checked';
+  await store.save(run);
+  let artifactHashes: CheckObservation['artifactHashes'] = [];
+  let inputChanges: string[] = [];
+  let codeChanges: string[] = [];
+  let validationHash: string | undefined;
+  const evidence = async (report: CheckReport | null, logText: string) => {
+    const id = run.pendingCheck!.id;
+    const prefix = `checks/${id}`;
+    const observation: CheckObservation = { id, kind: options.initial ? 'initial' : 'recheck', checkedAt: new Date().toISOString(),
+      delivery: run.delivery, report: report ? `${prefix}/check.json` : null, log: report ? `${prefix}/validation.log` : null,
+      artifactHashes, inputChanges, codeChanges, artifactChanges: run.provenance ? changedHashes(run.provenance.artifacts, artifactHashes) : [], validationHash };
+    if (report) {
+      await atomicJSON(config.root, `runs/${run.id}/${observation.report}`, report);
+      await atomicText(config.root, `runs/${run.id}/${observation.log}`, logText);
+    }
+    run.checks = [...(run.checks ?? []), observation];
+    if (options.initial && !run.originalDelivery) run.originalDelivery = observation;
+    delete run.pendingCheck;
+    await store.save(run);
+    return run;
+  };
+  let listed = false;
+  try {
+    run.artifacts = await listArtifacts(config.root, run.id);
+    listed = true;
+    artifactHashes = await hashArtifacts(config.root, run.id, run.artifacts);
+    if (run.provenance) {
+      inputChanges = changedHashes(run.provenance.inputs, await hashInputs(config));
+      const code = await hashCode(config);
+      codeChanges = changedHashes(run.provenance.code, code);
+      validationHash = sha256(JSON.stringify({ command: config.validation?.command, code }));
+      if (validationHash !== run.provenance.validationHash && !codeChanges.length) codeChanges.push('validation configuration');
+      if (inputChanges.length || codeChanges.length) throw new Error(`Provenance changed since execution: ${[...inputChanges, ...codeChanges].join(', ')}`);
+    }
+  }
   catch (error) {
     const report: CheckReport = { status: 'failed', checks: [], issues: [`Artifact integrity: ${errorMessage(error)}`] };
-    run.artifacts = []; run.delivery = 'failed';
+    if (!listed) run.artifacts = [];
+    run.delivery = 'failed';
     await rm(check, { force: true, recursive: true });
     await atomicJSON(config.root, `runs/${run.id}/check.json`, report);
-    await store.save(run); return run;
+    await rm(log, { force: true, recursive: true });
+    await atomicText(config.root, `runs/${run.id}/validation.log`, `${report.issues.join('\n')}\n`);
+    return evidence(report, report.issues.join('\n'));
   }
   if (!config.validation) {
-    run.delivery = 'not_checked'; await store.save(run); return run;
+    run.delivery = 'not_checked'; return evidence(null, '');
   }
   await rm(check, { force: true, recursive: true });
   await rm(log, { force: true, recursive: true });
@@ -119,7 +177,7 @@ export async function checkRunUnlocked(config: AgentConfig, value: string, signa
     const [command, ...args] = config.validation.command;
     const result = await runCommand(command, args, { cwd: config.root, signal, timeoutMs: config.validation.timeoutMs ?? 120_000,
       maxOutputBytes: config.limits?.maxToolOutputBytes ?? 1_048_576,
-      env: { AGENT_ROOT: config.root, AGENT_RUN_ID: run.id, AGENT_RUN_DIR: run.directory, AGENT_OUTPUT_DIR: resolve(run.directory, 'output'), AGENT_CHECK_FILE: check } });
+      env: { ...config.env, AGENT_ROOT: config.root, AGENT_RUN_ID: run.id, AGENT_RUN_DIR: run.directory, AGENT_OUTPUT_DIR: resolve(run.directory, 'output'), AGENT_CHECK_FILE: check } });
     logText = `${result.stdout}${result.stderr}`;
     if (result.code !== 0) throw new Error(`Checker exited ${result.code}. See validation.log.`);
     // A checker can write a report, but cannot redirect the host to another file.
@@ -147,11 +205,49 @@ export async function checkRunUnlocked(config: AgentConfig, value: string, signa
     const partial = error as { stdout?: string; stderr?: string };
     logText += `${partial.stdout ?? ''}${partial.stderr ?? ''}\n${message}\n`;
   }
+  // Checkers can modify files even when exiting nonzero or writing bad JSON.
+  // Persist hashes of the actual final state on every completion path.
+  try {
+    const finalArtifacts = await listArtifacts(config.root, run.id);
+    const finalHashes = await hashArtifacts(config.root, run.id, finalArtifacts);
+    const changedDuringCheck = changedHashes(artifactHashes, finalHashes);
+    run.artifacts = finalArtifacts; artifactHashes = finalHashes;
+    if (run.provenance) {
+      inputChanges = changedHashes(run.provenance.inputs, await hashInputs(config));
+      codeChanges = changedHashes(run.provenance.code, await hashCode(config));
+    }
+    if (changedDuringCheck.length || inputChanges.length || codeChanges.length) {
+      report = { ...report, status: 'failed', issues: [...report.issues, `Files changed during validation: ${[...changedDuringCheck, ...inputChanges, ...codeChanges].join(', ')}`] };
+    }
+  } catch (error) {
+    artifactHashes = []; run.artifacts = [];
+    report = { ...report, status: 'failed', issues: [...report.issues, `Final integrity: ${errorMessage(error)}`] };
+  }
+  await rm(check, { force: true, recursive: true });
+  await atomicJSON(config.root, `runs/${run.id}/check.json`, report);
   await rm(log, { force: true, recursive: true });
   await atomicText(config.root, `runs/${run.id}/validation.log`, logText);
   run.delivery = report.status;
-  await store.save(run);
-  return run;
+  return evidence(report, logText);
+}
+/** Recover interrupted validation without rerunning its program or model. */
+export async function interruptCheckUnlocked(config: AgentConfig, run: RunRecord): Promise<void> {
+  if (!run.pendingCheck) return;
+  const pending = run.pendingCheck;
+  const report: CheckReport = { status: 'failed', checks: [], issues: ['Previous process ended before delivery checking finished. Validation was not replayed.'] };
+  const prefix = `checks/${opaqueId(pending.id)}`;
+  const observation: CheckObservation = { id: pending.id, kind: pending.kind, checkedAt: new Date().toISOString(), delivery: 'failed',
+    report: `${prefix}/check.json`, log: `${prefix}/validation.log`, artifactHashes: [], inputChanges: [], codeChanges: [], artifactChanges: [] };
+  const directory = await storagePath(config.root, `runs/${run.id}`);
+  for (const name of ['check.json', 'validation.log']) await rm(resolve(directory, name), { force: true, recursive: true });
+  await atomicJSON(config.root, `runs/${run.id}/check.json`, report);
+  await atomicText(config.root, `runs/${run.id}/validation.log`, `${report.issues[0]}\n`);
+  await atomicJSON(config.root, `runs/${run.id}/${observation.report}`, report);
+  await atomicText(config.root, `runs/${run.id}/${observation.log}`, `${report.issues[0]}\n`);
+  run.delivery = 'failed'; run.checks = [...(run.checks ?? []), observation];
+  if (pending.kind === 'initial' && !run.originalDelivery) run.originalDelivery = observation;
+  delete run.pendingCheck;
+  await createRunStore(config).save(run);
 }
 export async function checkRun(config: AgentConfig, value: string, options: { signal?: AbortSignal } = {}): Promise<RunRecord> {
   const release = await acquireOperation(config.root);

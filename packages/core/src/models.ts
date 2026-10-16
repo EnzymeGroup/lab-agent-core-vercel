@@ -1,9 +1,16 @@
 import { createProviderRegistry, type LanguageModel } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const projectEnvironment = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+/** Scope config evaluation without changing process-global credentials. */
+export function withModelEnvironment<T>(env: NodeJS.ProcessEnv, callback: () => T): T {
+  return projectEnvironment.run(env, callback);
+}
 
 /** Explicit configuration errors are raised before a turn can create any work. */
-export function modelFromEnv(env: NodeJS.ProcessEnv = process.env): LanguageModel {
+export function modelFromEnv(env: NodeJS.ProcessEnv = projectEnvironment.getStore() ?? process.env): LanguageModel {
   const provider = (env.LAB_AGENT_PROVIDER ?? 'openai').trim().toLowerCase();
   if (provider !== 'openai' && provider !== 'anthropic') {
     throw new Error(`Unsupported LAB_AGENT_PROVIDER: ${provider}. Use openai or anthropic.`);

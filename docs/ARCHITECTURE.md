@@ -33,11 +33,16 @@ flowchart TD
 | packages/core/src/process.ts | Shell-free subprocess execution, bounded output and process-group cancellation |
 | packages/core/src/mcp.ts | Native MCP connections, tool namespacing and cleanup |
 | packages/core/src/delivery.ts | Independent check execution, report validation and rechecking |
+| packages/core/src/provenance.ts | Streamed source/artifact SHA256, version/config/validator baselines and comparison |
+| packages/core/src/files.ts | Explicit bounded input imports, safe raster/text/CSV previews and artifact handles |
+| packages/core/src/diagnostics.ts | Static native tool schema inspection and explicit environment/connectivity diagnosis |
 | packages/core/src/http.ts | Authenticated API, native SSE, artifacts and static assets |
 | packages/core/src/cli.ts | CLI adapters for the same Agent lifecycle |
 | packages/core/src/create.ts | Project scaffolding entry point |
 | packages/core/src/scaffold.ts | Copy the installed minimal template into an empty project |
 | packages/core/templates/minimal/ | Installable Python-first starter with Skill and independent validator |
+| packages/core/templates/basic/ | Native TypeScript tool starter with cooperative cancellation |
+| packages/core/templates/python/ | Python-first starter with independent source-based validator |
 | apps/workbench/ | Next.js static client using native useChat and DefaultChatTransport |
 | apps/workbench/app/layout.tsx | Document metadata, theme initialization and shared page shell |
 | apps/workbench/app/page.tsx | Static page entry |
@@ -47,12 +52,17 @@ flowchart TD
 | apps/workbench/components/conversation.tsx | Conversation display and message rendering |
 | apps/workbench/components/message.tsx | Text, reasoning and native tool argument/result/error parts |
 | apps/workbench/components/run-panel.tsx | Execution/delivery status, check report, recheck and artifacts |
+| apps/workbench/components/input-files.tsx | Explicit input import and insertion of paths into the composer |
+| apps/workbench/components/artifact-preview.tsx | Escaped text/Markdown, bounded tables and authenticated raster preview |
+| apps/workbench/components/capabilities.tsx | Read-only native model/Skill/tool/MCP/file-policy inspection |
+| apps/workbench/components/run-evidence.tsx | Original/latest check observations and provenance baselines |
 | apps/workbench/lib/api.ts | Bootstrap credential, authenticated API requests and response errors |
 | scripts/bundle-web.mjs | Copy built static assets into the distributable package |
 | scripts/demo.mjs | Labeled deterministic model fixture plus persistent local demo project |
 | scripts/prepare-package.mjs | Validate built assets and copy root documentation/license/examples into npm package |
 | scripts/pack-core.mjs | Create the local installable release-candidate tarball |
 | scripts/compare-pi.mjs | Optional matched two-application comparison against an existing Pi build |
+| scripts/live-smoke.mjs | Explicit opt-in real-provider smoke; never substitutes a fixture for missing credentials |
 | scripts/tui-smoke.py | Real POSIX terminal driver for the official TUI integration test |
 | scripts/check-docs.mjs | Check local documentation links and required lifecycle/evidence language |
 | tests/fixtures/model-server.mjs | Real HTTP streaming/nonstreaming OpenAI-compatible deterministic fixture |
@@ -62,6 +72,10 @@ flowchart TD
 | tests/lifecycle.test.mjs | Full tasks, durable tool histories, actual worker crash, HTTP and ten-turn context behavior |
 | tests/delivery.test.mjs | Checker states, stale reports, partial CLI exit code and timeouts |
 | tests/review.test.mjs | Independently reproduced concurrency, cleanup, report integrity and error-mapping regressions |
+| tests/access.test.mjs | Sensitive aliases, current-run policy, restricted reads and noncooperative native cancellation |
+| tests/provenance.test.mjs | Original evidence, rechecks, tampering, legacy records and actual killed-checker-worker recovery |
+| tests/files.test.mjs | Upload authorization/type/size/path boundaries and bounded safe previews |
+| tests/onboarding.test.mjs | Project environment isolation, offline inspect, diagnostics and installed templates |
 | tests/tui.test.mjs | Official terminal UI through the shared authenticated session path |
 | tests/browser.spec.ts | Compiled browser interaction checks |
 | examples/sequence-summary/ | FASTA source-preserving analysis, Skill, checker and Python driver |
