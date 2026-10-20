@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>lab-agent-core-vercel · Architecture</title>
 <style>
-  :root { --bg:#f8fafc; --card:#fff; --fg:#0f172a; --muted:#475569; --line:#e2e8f0; --brand:#4f46e5; --brand-soft:#eef2ff; --ok:#047857; --warn:#b45309; --bad:#b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0b1020; --card:#121a2e; --fg:#e2e8f0; --muted:#94a3b8; --line:#24304a; --brand:#a5b4fc; --brand-soft:#1e2550; --ok:#6ee7b7; --warn:#fcd34d; --bad:#fca5a5; } }
+  :root { --bg:#f7f7f5; --card:#fff; --fg:#1c1917; --muted:#57534e; --line:#d6d3d1; --brand:#2563eb; --brand-soft:#eff6ff; --ok:#047857; --warn:#b45309; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --card:#1d1d1d; --fg:#e7e5e4; --muted:#a8a29e; --line:#3a3a3a; --brand:#60a5fa; --brand-soft:#14213d; --ok:#6ee7b7; --warn:#fcd34d; --bad:#fca5a5; } }
+  .layer.ext { border-left-style:dashed; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
   main { max-width:1040px; margin:0 auto; padding:40px 20px 80px; }
@@ -38,9 +39,9 @@
 <main>
 <header>
   <h1>Architecture</h1>
-  <p class="lead">The AI SDK owns the model/tool loop and the message protocol. Core is a thin execution and delivery layer around it: sessions, runs, checks, file boundaries and one loopback HTTP server. Every entry point calls the same <code>streamTurn</code>.</p>
+  <p class="lead">The AI SDK owns the model/tool loop and the message protocol. Core is a thin execution and delivery layer around it: sessions, runs, checks, file boundaries and one loopback HTTP server. Every entry point calls the same <code>streamTurn</code>. Optional tool sets live in a separate package, <code>lab-agent-extras</code>, which Core never imports.</p>
   <nav aria-label="Sections">
-    <a href="#entry">Entry points</a><a href="#layers">Layers</a><a href="#turn">Life of a turn</a><a href="#status">Status model</a><a href="#storage">Storage</a><a href="#safety">Boundaries</a><a href="#invariants">Invariants</a>
+    <a href="#entry">Entry points</a><a href="#layers">Layers</a><a href="#extras">Extras</a><a href="#turn">Life of a turn</a><a href="#status">Status model</a><a href="#storage">Storage</a><a href="#safety">Boundaries</a><a href="#invariants">Invariants</a>
   </nav>
 </header>
 
@@ -63,7 +64,7 @@
   <p class="muted">Imports point only downward. Each layer can be read and tested without the ones above it. Paths are under <code>packages/core/src/</code>.</p>
   <div class="card layer"><div class="name">cli/ server/</div><ul><li><code>main.ts</code> command table</li><li><code>doctor.ts</code> inspect, doctor</li><li><code>scaffold.ts</code> templates</li><li><code>http.ts</code> loopback server</li><li><code>routes.ts</code> origin/token guard, API</li><li><code>files.ts</code> uploads, previews</li></ul></div>
   <div class="arrow" aria-hidden="true">↓</div>
-  <div class="card layer"><div class="name">agent/</div><ul><li><code>create.ts</code> public facade</li><li><code>resources.ts</code> assemble once</li><li><code>gate.ts</code> one operation</li><li><code>turn.ts</code> accept + stream</li><li><code>finish.ts</code> persist, settle, record</li><li><code>prompt.ts</code> rules, bounded context</li><li><code>recovery.ts</code> crash leftovers</li><li><code>mcp.ts</code> add/test/remove HTTP MCP, hot-swap tools</li><li><code>approval.ts</code> pending calls, decisions</li><li><code>steering.ts</code> mid-turn messages</li><li><code>compact.ts</code> session summary</li><li><code>subagent.ts</code> runSubagent helpers</li><li><code>steps.ts</code> model calls, usage, cost</li><li><code>eval.ts</code> graded eval runs</li></ul></div>
+  <div class="card layer"><div class="name">agent/</div><ul><li><code>create.ts</code> public facade</li><li><code>resources.ts</code> assemble once</li><li><code>gate.ts</code> one operation</li><li><code>turn.ts</code> accept + stream</li><li><code>finish.ts</code> persist, settle, record</li><li><code>prompt.ts</code> rules, bounded context</li><li><code>recovery.ts</code> crash leftovers</li><li><code>mcp.ts</code> add/test/remove HTTP MCP, hot-swap tools</li><li><code>approval.ts</code> pending calls, decisions</li><li><code>switches.ts</code> disable, always allow</li><li><code>attachments.ts</code> images, PDFs</li><li><code>steering.ts</code> mid-turn messages</li><li><code>compact.ts</code> session summary</li><li><code>subagent.ts</code> runSubagent helpers</li><li><code>steps.ts</code> model calls, usage, cost</li><li><code>eval.ts</code> graded eval runs</li></ul></div>
   <div class="arrow" aria-hidden="true">↓</div>
   <div class="grid g2">
     <div class="card layer"><div class="name">tools/</div><ul><li><code>index.ts</code> assemble, name-check</li><li><code>guard.ts</code> signals, output bound, in-flight</li><li><code>builtin.ts</code> read/write/list/loadSkill, updatePlan, readToolOutput</li><li><code>search.ts</code> findFiles, searchFiles</li><li><code>memory.ts</code> save/read/forget memory, index note</li><li><code>python.ts</code> runPython</li><li><code>skills.ts</code> discover, verified load</li><li><code>mcp.ts</code> MCP clients</li></ul></div>
@@ -74,8 +75,14 @@
   <div class="arrow" aria-hidden="true">↓</div>
   <div class="card layer"><div class="name">workspace/</div><ul><li><code>workspace.ts</code> model file view, policy</li><li><code>context.ts</code> per-turn AsyncLocalStorage</li><li><code>process.ts</code> argv subprocess, group kill</li></ul></div>
   <div class="arrow" aria-hidden="true">↓</div>
-  <div class="card layer"><div class="name">store/</div><ul><li><code>files.ts</code> atomic JSON, safe paths, IDs</li><li><code>hash.ts</code> sha256, hashFile</li><li><code>lock.ts</code> cross-process lock</li><li><code>sessions.ts</code> session records</li><li><code>mcp.ts</code> project HTTP MCP list</li><li><code>memory.ts</code> project memory entries</li></ul></div>
+  <div class="card layer"><div class="name">store/</div><ul><li><code>files.ts</code> atomic JSON, safe paths, IDs</li><li><code>hash.ts</code> sha256, hashFile</li><li><code>lock.ts</code> cross-process lock</li><li><code>sessions.ts</code> session records</li><li><code>mcp.ts</code> project HTTP MCP list</li><li><code>memory.ts</code> project memory entries</li><li><code>tools.json</code> via <code>tools.ts</code> tool switches</li></ul></div>
   <p class="muted">Shared at the root: <code>types.ts</code> (all record and config types), <code>errors.ts</code> (error classes mapped to HTTP status, credential redaction), <code>index.ts</code> (public exports).</p>
+</section>
+
+<section id="extras" aria-labelledby="extras-h">
+  <h2 id="extras-h">Extras</h2>
+  <p class="muted"><code>packages/extras</code> builds on Core's public API only. A project adds a module in <code>agent.config.ts</code>; removing the line removes the tools. They are ordinary native tools, so approval, switches, helpers and provenance apply unchanged. Details: <a href="EXTRAS.md">EXTRAS.md</a>.</p>
+  <div class="card layer ext"><div class="name">lab-agent-extras</div><ul><li><code>net.ts</code> private-address guard per hop</li><li><code>web</code> webSearch, webFetch</li><li><code>hpc</code> Slurm / local jobs across turns</li><li><code>bio</code> NCBI, UniProt, Ensembl</li><li><code>files</code> inspectFile</li><li><code>env</code> conda + pip capture</li><li><code>research</code> citeSource, researcher/verifier, citation checker</li><li><code>coding</code> editFile, undoEdit, git, bwrap shell</li></ul></div>
 </section>
 
 <section id="turn" aria-labelledby="turn-h">
@@ -83,10 +90,10 @@
   <ol class="steps">
     <li class="card"><h3>Accept</h3><code>turn.ts</code> validates the request. <code>gate.ts</code> takes the in-process gate, then the cross-process project lock (<code>store/lock.ts</code>). A second operation gets <code>BusyError</code> (HTTP 409).</li>
     <li class="card"><h3>Recover and open</h3>Crash leftovers are marked interrupted (<code>recovery.ts</code>, never replayed). The session is loaded, and its stored tool calls are validated against the current tool schemas.</li>
-    <li class="card"><h3>Freeze</h3>For a task, <code>runs/store.ts</code> creates <code>runs/&lt;id&gt;/</code> and <code>provenance.ts</code> hashes the selected inputs, config, scripts, checker files and every available <code>SKILL.md</code>.</li>
-    <li class="card"><h3>Stream</h3>The user message is saved. If the model's view would reach the compaction threshold, older turns become <code>session.summary</code> (<code>compact.ts</code>). The project memory index is attached to the latest user message, never stored. <code>ToolLoopAgent.stream()</code> starts with Core's bounded context projection (<code>prompt.ts</code>) inside an <code>ExecutionContext</code> that carries mode, signal, output directory, steering queue and token budget to tools.</li>
+    <li class="card"><h3>Freeze</h3>For a task, <code>runs/store.ts</code> creates <code>runs/&lt;id&gt;/</code> and <code>provenance.ts</code> hashes the selected inputs, config, scripts, checker files and every available <code>SKILL.md</code>, plus attachments, the tool switches in effect and the host environment.</li>
+    <li class="card"><h3>Stream</h3>The user message is saved; images and PDFs are kept as <code>project:</code> references and read through the file policy for each model call (<code>attachments.ts</code>). If the model's view would reach the compaction threshold, older turns become <code>session.summary</code> (<code>compact.ts</code>). The project memory index is attached to the latest user message, never stored. <code>ToolLoopAgent.stream()</code> starts with Core's bounded context projection (<code>prompt.ts</code>) inside an <code>ExecutionContext</code> that carries mode, signal, output directory, steering queue and token budget to tools.</li>
     <li class="card"><h3>Split</h3>The UI stream is <code>tee()</code>'d. The browser gets a detachable copy; <code>finish.ts</code> consumes the other and saves history at most every 100 ms. Closing the tab never stops accepted work. Only cancel does.</li>
-    <li class="card"><h3>Settle</h3>When the stream ends, <code>finish.ts</code> waits for in-flight tool executions (<code>tools/guard.ts</code>). A call that needs approval pauses the run as <code>awaiting_approval</code> and releases the lock; <code>respondTurn</code> continues the same message later. Queued steering starts another stream on the same lock.</li>
+    <li class="card"><h3>Settle</h3>When the stream ends, <code>finish.ts</code> waits for in-flight tool executions (<code>tools/guard.ts</code>). A call that needs approval (listed in <code>approval</code> or declaring its own <code>needsApproval</code>, and not switched to always allow) pauses the run as <code>awaiting_approval</code> and releases the lock; <code>respondTurn</code> continues the same message later. Queued steering starts another stream on the same lock.</li>
     <li class="card"><h3>Record</h3>Otherwise <code>finish.ts</code> writes the run's terminal <code>execution</code>, its model calls, usage and cost, and hashes the outputs.</li>
     <li class="card"><h3>Check</h3>If execution completed, <code>check.ts</code> runs preflight (did inputs or code change?), the checker (argv, no shell, writes <code>AGENT_CHECK_FILE</code>), and a final rehash (did the checker modify files?). The result sets <code>delivery</code>. With <code>repairAttempts</code>, a failed or partial check sends the issues back to the agent and streams again.</li>
     <li class="card"><h3>Release</h3>Session state returns to idle and the lock is released. A chat turn has no run: it skips freezing, the run record and the check.</li>
@@ -133,9 +140,12 @@
   operation.lock        { id, pid, host, startedAt }
   uploads/&lt;uuid&gt;.json   upload records
   mcp.json              project HTTP MCP servers
+  tools.json            tool switches
   memory/&lt;name&gt;.md      project memory (one fact per file)
   evals/&lt;time&gt;.json     eval reports
-data/uploads/           imported inputs, read-only</pre></div>
+  extras/edits/         undo log of extras editFile
+data/uploads/           imported inputs, read-only
+jobs/&lt;id&gt;/              extras HPC job record, logs, output/</pre></div>
     <div class="card"><pre>runs/&lt;id&gt;/
   run.json              RunRecord (schemaVersion 2)
   output/               deliverables; the only part
@@ -153,6 +163,8 @@ data/uploads/           imported inputs, read-only</pre></div>
     <div class="card"><h3>Model file tools</h3>Paths are resolved lexically and through symlinks; both must stay in the project. Secrets, <code>.git</code>, <code>.lab-agent/</code> and run metadata are hidden. Hard links are refused. Writes need an active task and land in its <code>output/</code>.</div>
     <div class="card"><h3>Trusted host code</h3>Config, registered Python, MCP servers and native tools run with your permissions and are not sandboxed. Python runs as argv with no shell, in its own process group so cancel stops the whole tree.</div>
     <div class="card"><h3>Local server</h3>Binds 127.0.0.1 only. Foreign <code>Host</code>/<code>Origin</code> or cross-site fetches get 403. Every API route except bootstrap needs the per-process bearer token.</div>
+    <div class="card"><h3>Outbound requests (extras)</h3><code>webFetch</code> and <code>citeSource</code> refuse loopback, private, link-local and metadata addresses, checked against the DNS answer actually used, on every redirect. Search and database queries leave the machine.</div>
+    <div class="card"><h3>Model-written commands (extras)</h3>Only <code>shell</code> runs them: bubblewrap with no network, read-only system, empty home, secrets blanked, <code>.lab-agent/</code> hidden, <code>runs/</code> read-only. Every call needs approval.</div>
   </div>
 </section>
 
@@ -166,12 +178,14 @@ data/uploads/           imported inputs, read-only</pre></div>
       <li>Every accepted operation ends with a terminal record, including after a crash.</li>
       <li>The lock is held until tool processes settle, never released early on abort.</li>
       <li>Tools and checkers are never replayed after recovery.</li>
-      <li>Model file tools never see secrets or Core metadata.</li>
+      <li>Model file tools, including search and attachment reads, never see secrets or Core metadata.</li>
+      <li>The config is the ceiling: switches disable tools or skip pauses, never add tools. Helpers never receive tools that need approval.</li>
+      <li>Core never imports extras; extras tools follow the same approval, switch and provenance rules as any tool.</li>
     </ul>
   </div>
 </section>
 
-<footer>Text reference: <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · contracts: <a href="REFERENCE.md">REFERENCE.md</a> · how-to: <a href="GUIDE.md">GUIDE.md</a></footer>
+<footer>Text reference: <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · contracts: <a href="REFERENCE.md">REFERENCE.md</a> · how-to: <a href="GUIDE.md">GUIDE.md</a> · extras: <a href="EXTRAS.md">EXTRAS.md</a> · teaching diagram (Chinese): <a href="framework.html">framework.html</a></footer>
 </main>
 </body>
 </html>

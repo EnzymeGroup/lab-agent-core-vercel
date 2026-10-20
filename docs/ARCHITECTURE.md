@@ -2,6 +2,8 @@
 
 Core is the execution and delivery layer. The AI SDK owns the model/tool loop and the message protocol; Core adds sessions, runs, checks, safety boundaries and one local HTTP server. The Next.js workbench is a static export served by that server; there is no second execution server.
 
+Optional tool sets live in a separate package, `packages/extras` (`lab-agent-extras`): web, HPC jobs, bioinformatics databases, file inspection, environment capture, deep research and coding. Extras imports only Core's public entry point; Core and the workbench never import extras. A project gets extras tools only by adding them in `agent.config.ts` ([Extras](EXTRAS.md)).
+
 ```mermaid
 flowchart LR
   CLI[CLI / TUI] --> Turn
@@ -9,6 +11,8 @@ flowchart LR
   App[Your code] --> Turn[agent/turn.ts]
   Turn --> SDK[AI SDK ToolLoopAgent]
   SDK --> Tools[tools/: built-ins · Python · Skills · MCP · yours]
+  Config[agent.config.ts] -. opt-in .-> Extras[lab-agent-extras: web · hpc · bio · files · env · research · coding]
+  Extras --> Tools
   Turn --> Sessions[store/sessions.ts]
   Turn --> Finish[agent/finish.ts] --> Runs[runs/store.ts] --> Check[runs/check.ts]
 ```
@@ -17,11 +21,11 @@ flowchart LR
 
 1. `agent/turn.ts` validates the request, then `agent/gate.ts` takes the in-process gate and the project lock (`store/lock.ts`).
 2. Crash leftovers are recovered (`agent/recovery.ts`); the session is loaded and checked against current tool schemas.
-3. For a task, `runs/store.ts` creates `runs/<id>/` and `runs/provenance.ts` freezes the inputs, code and Skill fingerprints.
-4. The user message is saved. If the model's view would reach the compaction threshold, older turns are summarized into `session.summary` (`agent/compact.ts`). The native stream starts with Core's bounded context (`agent/prompt.ts`); the memory index is appended to the latest user message of each segment, never stored.
+3. For a task, `runs/store.ts` creates `runs/<id>/` and `runs/provenance.ts` freezes the inputs, code and Skill fingerprints and records the host environment; attachments and the tool switches in effect are recorded too.
+4. The user message is saved; attached images and PDFs are stored as `project:` references (`agent/attachments.ts`). If the model's view would reach the compaction threshold, older turns are summarized into `session.summary` (`agent/compact.ts`). The native stream starts with Core's bounded context (`agent/prompt.ts`); attachments are read through the file policy for each model call, and the memory index is appended to the latest user message of each segment, never stored.
 5. The stream is split in two: the UI gets a detachable copy, and `agent/finish.ts` consumes the other to persist history.
 6. When the stream ends, `finish.ts` waits for tools to settle, then takes one of three exits:
-   - a tool call needs approval (`agent/approval.ts`): the run and session become `awaiting_approval` and the lock is released. `respondTurn` later continues the same assistant message and run;
+   - a tool call needs approval (listed in `approval`, or the tool's own `needsApproval`, unless switched to always allow): the run and session become `awaiting_approval` and the lock is released (`agent/approval.ts`). `respondTurn` later continues the same assistant message and run;
    - steering text is still queued (`agent/steering.ts`): it is appended as a user message and another stream starts on the same lock;
    - otherwise the run's terminal state is recorded and the check runs (`runs/check.ts`). With `repairAttempts`, a failed or partial check appends a repair message and streams again.
 7. Session usage is added up, steering parts are split into user messages, and the lock is released.
@@ -34,11 +38,13 @@ Imports only point downward. Each layer can be read and tested without the ones 
 
 ```
 cli/  server/          entry points: command table, loopback HTTP + workbench
-agent/                 turn lifecycle: gate → turn → finish, recovery, prompt
+agent/                 turn lifecycle: gate → turn → finish, recovery, prompt, approval, switches, attachments
 tools/   runs/         model tools (built-ins, Python, Skills, MCP) · run records, provenance, checks
 config/                defineAgent, .env, modelFromEnv
 workspace/             the model's file view, execution context, subprocesses
-store/                 atomic JSON, project lock, sessions, hashing
+store/                 atomic JSON, project lock, sessions, memory, tool switches, hashing
+
+packages/extras        opt-in tool sets on Core's public API (never imported by Core)
 ```
 
 A browsable version with the turn sequence and storage layout is in [architecture.html](architecture.html); [framework.html](framework.html) is a Chinese teaching diagram of the whole framework.
@@ -53,7 +59,7 @@ A browsable version with the turn sequence and storage layout is in [architectur
 | `config/load.ts` | `defineAgent` validation, `limitsOf`, `.env` loading, config import, instructions |
 | `config/models.ts` | `modelFromEnv`, `modelInfo`, `modelChoices`, `selectModel`, usage and cost arithmetic |
 | `agent/create.ts` | `createAgent`: the public facade |
-| `agent/resources.ts` | Builds workspace, Skills, MCP, tools and the native `ToolLoopAgent` (approval, retries, tool-name repair, budget stop, steering and bounding in `prepareStep`) |
+| `agent/resources.ts` | Builds workspace, Skills, MCP, tools and the native `ToolLoopAgent`: the approval rule (`approval` or a tool's own `needsApproval`, minus always-allowed tools), retries, tool-name repair, budget stop, and steering, disabled tools and bounding in `prepareStep` |
 | `agent/gate.ts` | One operation at a time: starting → running → released; cancel and close |
 | `agent/turn.ts` | Accept a turn (`streamTurn`), continue one after approval (`respondTurn`), queue steering (`steerTurn`), start segments |
 | `agent/finish.ts` | Per segment: persist, settle tools; then pause, follow up, or record the run, check, repair, release |
@@ -98,6 +104,21 @@ A browsable version with the turn sequence and storage layout is in [architectur
 | `cli/scaffold.ts`, `cli/create.ts` | Templates and `create-lab-agent` |
 | `templates/basic`, `templates/python` | Installable starters |
 
+Extras (`packages/extras/src`, subpath exports `lab-agent-extras/<module>`):
+
+| Path | Responsibility |
+| --- | --- |
+| `net.ts` | Outbound GET with the private/reserved-address check at connect time, on every redirect |
+| `web.ts` | `webSearch` (Tavily or any `SearchProvider`), `webFetch`, `readPage`, HTML to text |
+| `hpc.ts` | `submitJob`, `jobStatus`, `jobLogs`, `cancelJob`; `slurm()` and `localJobs()` adapters; state in `jobs/<id>/job.json` |
+| `bio.ts` | NCBI E-utilities, UniProt and Ensembl lookups, paced per service, with source URL and retrieval time |
+| `files.ts` | `inspectFile`: format, compression and sample statistics from the first MiB, through Core's file policy |
+| `env.ts` | `captureEnvironment`: conda export and pip freeze, saved as run artifacts in a task |
+| `research.ts` | `citeSource` (quote checked against the page), `listSources`, `researcher`/`verifier` presets, `CITATIONS_CHECKER` |
+| `coding.ts` | `editFile`/`undoEdit` through Core's write policy, read-only `gitStatus`/`gitDiff`, `shell` in a bubblewrap sandbox; changing tools declare `needsApproval` |
+| `../checkers/citations.mjs`, `../skills/deep-research/` | Citation checker and the deep-research Skill |
+| `../examples/research/` | A complete research project (kept here so Core's tarball never includes extras) |
+
 Workbench (`apps/workbench`, Next.js static export, Tailwind CSS v4, shadcn-style components on Radix):
 
 | Path | Responsibility |
@@ -126,7 +147,10 @@ Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-ass
 - Every accepted operation ends with a terminal record, including after a crash.
 - The lock is held until tool processes have settled, never released early on abort.
 - Tools are never replayed after recovery.
-- Model file tools, including search, never see secrets or Core metadata; memory is reached only through the memory tools. Host code is trusted, not sandboxed.
+- Model file tools, including search and attachment reads, never see secrets or Core metadata; memory is reached only through the memory tools. Host code is trusted, not sandboxed.
+- The config is the ceiling: tool switches can disable a tool or skip a pause, never add a tool. A tool needs approval when `approval` lists it or it declares `needsApproval`; helpers never receive such tools.
+- Core never imports extras. Extras tools are ordinary native tools, so approval, switches, helpers and provenance apply to them unchanged.
+- The one place that runs model-written commands is the extras `shell`: it is sandboxed with bubblewrap and every call needs approval.
 
 ## Tests
 
@@ -141,7 +165,8 @@ Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-ass
 | `tests/files.test.mjs` | Upload and preview boundaries |
 | `tests/workbench-features.test.mjs`, `fixtures/mcp-http-server.mjs` | Model choice, context metadata, Skill reading, project HTTP MCP |
 | `tests/memory-search.test.mjs` | `findFiles`/`searchFiles` policy and limits; memory save, index, provenance, routes, `memory: false`, helpers |
-| `tests/core-upgrades.test.mjs` | Tool switches, parallel helpers, image/PDF attachments and uploads, environment provenance |
+| `tests/core-upgrades.test.mjs` | Tool switches, parallel helpers, image/PDF attachments and uploads, environment provenance, a tool's own `needsApproval` |
+| `tests/extras/*.test.mjs` (`npm run test:extras`) | One file per extras module, against local stand-ins for websites, databases, Slurm and conda; the coding shell runs in real bubblewrap |
 | `tests/harness.test.mjs` | Approval, retries, tool-name repair, compaction, `readToolOutput`, repair loop, helpers, plan, steering, telemetry and budgets, evals, HTTP routes |
 | `tests/onboarding.test.mjs`, `consumers/installed.test.mjs` | Templates and the packed tarball outside the repo |
 | `tests/tui.test.mjs`, `browser.spec.ts` | Terminal UI and the workbench in Chromium |
