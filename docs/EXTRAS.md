@@ -74,3 +74,48 @@ Adapters:
 `maxActive` (default 4) limits unfinished jobs. Job scripts are trusted project code and are not sandboxed; a Slurm job runs with your cluster account. Keep `submitJob` in `approval` so a person sees each submission and its arguments; tools in `approval` are never given to helpers.
 
 Not verified: the Slurm adapter is tested with stand-in `sbatch`/`squeue`/`sacct`/`scancel` scripts that return recorded output; this machine has no Slurm. Check it once on your login node, for example with a job that only runs `hostname`.
+
+## Bioinformatics databases: `lab-agent-extras/bio`
+
+Read-only lookups. `bioTools(options?)` returns:
+
+| Tool | Input | Output |
+| --- | --- | --- |
+| `ncbiSearch` | `{ db, term ≤500, maxResults 1–50 = 10 }` | `{ count, ids, results[] }`: each result keeps the summary's plain fields (≤400 characters each), `organism` and the first five `authors` |
+| `ncbiFetch` | `{ db, ids 1–20, format: fasta\|genbank\|abstract\|medline\|xml = fasta }` | `{ text, totalChars, truncated? }` |
+| `uniprotSearch` | `{ query ≤500, maxResults 1–25 = 10 }` | `results[{ accession, entryName, reviewed, protein, genes, organism, length }]` |
+| `uniprotEntry` | `{ accession, format: fasta\|text\|json = fasta }` | `{ text, … }` |
+| `ensemblLookup` | `{ symbol \| id, species = homo_sapiens }` | id, name, description, biotype, assembly, location, strand, canonical transcript |
+| `ensemblSequence` | `{ id, type: genomic\|cdna\|cds\|protein = genomic }` | FASTA `{ text, … }` |
+
+`db` is one of gene, protein, nuccore, pubmed, pmc, snp, taxonomy, sra, biosample, bioproject, assembly, clinvar, gds, structure. Every result carries `source` (the request URL with the API key removed) and `retrievedAt`, since database records change. Text is cut at `maxChars` (default 20000); fetch fewer records, or download full data with a registered script.
+
+Options: `ncbi: { apiKey?, email?, baseUrl? } | false` (key defaults to `NCBI_API_KEY`), `uniprot: { baseUrl? } | false`, `ensembl: { baseUrl? } | false`, `env`, `timeoutMs` (30000), `maxChars`. Requests to each service are spaced to its published rate (NCBI 3/s without a key and 10/s with one, Ensembl 15/s), and a 429 is retried twice. Identifiers are checked against `[A-Za-z0-9_.-]` before they enter a URL. Queries and identifiers are sent to NCBI and EBI.
+
+Not verified: request and response shapes follow each service's public documentation and are tested against a local stand-in only.
+
+## Large and binary files: `lab-agent-extras/files`
+
+`inspectTools({ root, fileAccess? })` returns `inspectFile { path, lines 1–200 = 20 }`, a first look at a file of any size without loading it. It reads at most the first MiB (and decompresses at most 1 MiB of gzip or BGZF) through Core's file policy: secrets, `.lab-agent/`, hard links and paths outside `readRoots` are refused, as with `readFile`. Pass the same `fileAccess` as the config.
+
+The result is `{ path, bytes, compression, format, sampledBytes, complete, preview, stats?, note }`:
+
+| Format | `stats` |
+| --- | --- |
+| `fastq` | `readsSampled`, `length { min, max, mean }`, `gcPercent`, `qualityEncoding` |
+| `fasta` | `recordsSampled`, `firstIds`, `length`, `gcPercent` |
+| `vcf` | `headerLines`, `samples`, `firstSamples`, `recordsSampled`, `chromosomes` |
+| `bam` | `header { headerLines, references, firstReferences[{ name, length }] }`; the preview is the SAM header text. Alignment records are not decoded |
+| `sam`, `gff`, `bed`, `csv`, `tsv` | record or row and column counts |
+| `json`, `text` | none |
+| `cram`, `hdf5`, `parquet`, `png`, `pdf`, `sqlite`, `binary` | none; `magic` holds the first 16 bytes as hex |
+
+bzip2, xz, zstd and zip are named (`format: compressed`) but not decompressed. Statistics cover only the sample unless `complete` is true; a record cut off at the sample's edge is not counted. Exact counts belong in a registered script, for example one that calls `samtools flagstat` or `seqkit stats`.
+
+## Environment capture: `lab-agent-extras/env`
+
+`envTools({ root, env?, conda?, python?, timeoutMs? })` returns `captureEnvironment { condaEnv? }`. It runs `conda env export` (the active environment from `CONDA_PREFIX`, or `-n condaEnv`) and `python -m pip freeze --all`, without a shell. `conda` defaults to `CONDA_EXE`, then `conda` on `PATH`; `python` defaults to `python3`. Pass the same interpreter as `config.python.command`.
+
+In a task, `conda-environment.yml` and `pip-freeze.txt` are written to `<outputDirectory>/environment/` through Core's write policy, so they are listed in `run.artifacts` with hashes in `provenance.artifacts`. A project checker that rejects unexpected output files has to allow `environment/`. In chat the text is returned and nothing is saved. Whatever cannot be captured is explained in `notes`; the call fails only when nothing was captured. Core already records Node, platform, the Python version and `CONDA_DEFAULT_ENV` in every run's `provenance.environment`; this tool adds the full package lists.
+
+Checked once against this machine's real conda and Python, outside the test suite; the tests use stand-in executables.

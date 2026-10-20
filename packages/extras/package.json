@@ -20,6 +20,18 @@
     "./hpc": {
       "types": "./dist/hpc.d.ts",
       "import": "./dist/hpc.js"
+    },
+    "./bio": {
+      "types": "./dist/bio.d.ts",
+      "import": "./dist/bio.js"
+    },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "import": "./dist/files.js"
+    },
+    "./env": {
+      "types": "./dist/env.d.ts",
+      "import": "./dist/env.js"
     }
   },
   "files": [

@@ -370,6 +370,9 @@
       <li>Core 不依赖它；在 <code>agent.config.ts</code> 里引入才生效</li>
       <li><code>web.ts</code> webSearch（Tavily）、webFetch</li>
       <li><code>hpc.ts</code> 提交作业立刻返回 jobId，之后再查（Slurm / 本机）</li>
+      <li><code>bio.ts</code> NCBI、UniProt、Ensembl 只读查询，结果带来源和时间</li>
+      <li><code>files.ts</code> inspectFile：大文件只读开头，识别 FASTQ / BAM / VCF…</li>
+      <li><code>env.ts</code> 导出 conda 环境和 pip 包列表，存成 run 产物</li>
       <li><code>net.ts</code> 出网请求逐跳检查，拒绝内网地址</li>
       <li>测试单独放在 <code>tests/extras/</code></li></ul></div>
   </div>
@@ -382,7 +385,7 @@
       <tr><td><b>Vercel AI SDK 内核</b></td><td>模型 ↔ 工具循环本身：调用模型、流式输出、解析工具调用、执行工具、把结果塞回、判断模型说完了；消息格式；MCP 客户端</td><td><code>ToolLoopAgent</code> · <code>UIMessage</code> · <code>@ai-sdk/mcp</code></td></tr>
       <tr><td><b>Core harness（我们）</b></td><td>循环之外的一切，加上循环里的钩子：排队和锁、会话和 run、组装上下文（压缩、截断、记忆目录）、内置工具、文件权限、审批、插话、重试、强制停止、收尾记账、跑检查、返工、崩溃恢复、HTTP 服务、界面</td><td><code>gate</code> · <code>turn</code> · <code>finish</code> · <code>tools/</code> · <code>runs/</code></td></tr>
       <tr><td><b>应用（你的项目）</b></td><td>领域知识和验收标准：项目说明、Skill、领域工具和 Python 脚本、MCP 服务、检查程序、界面文案</td><td><code>AGENTS.md</code> · <code>agent.config.ts</code> · <code>tools/*.py</code></td></tr>
-      <tr><td><b>Extras（可选包，我们写）</b></td><td>通用的额外工具，项目按需引入：联网搜索和抓取、HPC 长任务（Slurm / 本机后台进程）。只是普通的原生工具，审批、开关、记录照常适用</td><td><code>lab-agent-extras/web</code> · <code>/hpc</code></td></tr>
+      <tr><td><b>Extras（可选包，我们写）</b></td><td>通用的额外工具，项目按需引入：联网搜索和抓取、HPC 长任务（Slurm / 本机后台进程）、生信数据库查询、大文件预览、环境导出。只是普通的原生工具，审批、开关、记录照常适用</td><td><code>lab-agent-extras/web</code> · <code>/hpc</code> · <code>/bio</code> · <code>/files</code> · <code>/env</code></td></tr>
       <tr><td><b>模型服务</b></td><td>思考和决定下一步：回答，或者要调用哪个工具、传什么参数</td><td>OpenAI 兼容接口 · Anthropic</td></tr>
     </tbody>
   </table>
