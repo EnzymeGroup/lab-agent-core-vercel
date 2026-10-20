@@ -32,10 +32,17 @@
     "./env": {
       "types": "./dist/env.d.ts",
       "import": "./dist/env.js"
+    },
+    "./research": {
+      "types": "./dist/research.d.ts",
+      "import": "./dist/research.js"
     }
   },
   "files": [
     "dist",
+    "checkers",
+    "skills",
+    "examples",
     "README.md"
   ],
   "scripts": {

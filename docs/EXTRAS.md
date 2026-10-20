@@ -119,3 +119,36 @@ bzip2, xz, zstd and zip are named (`format: compressed`) but not decompressed. S
 In a task, `conda-environment.yml` and `pip-freeze.txt` are written to `<outputDirectory>/environment/` through Core's write policy, so they are listed in `run.artifacts` with hashes in `provenance.artifacts`. A project checker that rejects unexpected output files has to allow `environment/`. In chat the text is returned and nothing is saved. Whatever cannot be captured is explained in `notes`; the call fails only when nothing was captured. Core already records Node, platform, the Python version and `CONDA_DEFAULT_ENV` in every run's `provenance.environment`; this tool adds the full package lists.
 
 Checked once against this machine's real conda and Python, outside the test suite; the tests use stand-in executables.
+
+## Deep research: `lab-agent-extras/research`
+
+Parallel helpers, quotes checked against each page, and a checker for the citations. It builds on Core's `runSubagent`: the SDK runs all tool calls of one step concurrently, so a model that starts several `researcher` helpers in the same step gets them in parallel. Nothing else schedules work.
+
+```ts
+import { webTools, tavily } from 'lab-agent-extras/web';
+import { researchTools, researchSubagents, CITATIONS_CHECKER } from 'lab-agent-extras/research';
+
+tools: { ...webTools({ search: tavily({ env }) }), ...researchTools({ root }) },
+subagents: researchSubagents(),
+validation: { command: ['node', CITATIONS_CHECKER], repairAttempts: 1 },
+limits: { maxSteps: 40, timeoutMs: 1_800_000 },
+```
+
+Copy `skills/deep-research/` from this package (`RESEARCH_SKILL_DIR`) into the project's `.agents/skills/`. A complete project is in [packages/extras/examples/research](../packages/extras/examples/research/README.md).
+
+| Tool | Input | Output |
+| --- | --- | --- |
+| `citeSource` | `{ url, quote 12–600, title? }` | `{ id, cite, url, title?, quotes, file }` |
+| `listSources` | `{}` | `{ file, sources[] }` |
+
+`citeSource` fetches the page (same rules as `webFetch`, including the private-address check), confirms the quote appears in it word for word (case, spacing, curly quotes and dashes are ignored), and records it in `<outputDirectory>/sources.json` as `{ id, url, title?, retrievedAt, sha256, quotes[] }`. A page keeps one id (`S1`, `S2`, …) however often it is cited; fragments are ignored. A paraphrase is rejected with a message telling the model to copy the sentence. Parallel helpers write through one queue per file, so no record is lost. It works in task mode only, where there is an output directory.
+
+`researchSubagents({ tools?, model?, maxSteps? })` returns two helper presets for `subagents`. `researcher` (default tools `webSearch`, `webFetch`, `citeSource`; add database tools such as `ncbiSearch`) answers one sub-question and returns findings ending in `[S#]`. `verifier` (the same tools without search) reads the cited pages and reports unsupported claims. Helpers never get tools listed in `approval`, so keep these out of it.
+
+The Skill tells the main agent to scope the question, split it into 3–5 sub-questions with `updatePlan`, start one researcher per sub-question in the same step, merge, research gaps once more if needed, write `report.md` with a citation on every factual sentence and a `## Sources` list from `listSources`, then run the verifier and fix what it finds.
+
+`CITATIONS_CHECKER` is a Core checker. It fails when `report.md` or `sources.json` is missing or a cited id was never recorded or has no quote. It returns partial when fewer than `RESEARCH_MIN_SOURCES` (default 3) distinct sources are cited, or when a prose paragraph of 200+ characters cites nothing. `RESEARCH_REPORT` and `RESEARCH_SOURCES` rename the files. The checker lives in `node_modules`, outside the project, so it is not part of the run's code fingerprint; copy it into the project if it should be.
+
+What this proves: each cited page contained the quoted sentence when it was read. It does not prove the report states the source correctly, that the source is right, or that important sources were not missed. The verifier helper and a person reading the report cover part of that.
+
+Not verified: tested with local pages and the deterministic model fixture, which follows a scripted plan. How well a real model splits questions, judges sources and writes is untested.

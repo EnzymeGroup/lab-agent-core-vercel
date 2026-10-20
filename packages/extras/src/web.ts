@@ -105,6 +105,19 @@ function charset(contentType: string): string {
   }
 }
 
+export interface Page { url: string; status: number; contentType: string; title?: string; text: string; truncated: boolean }
+
+/** Fetch one public page and convert it to text, as webFetch does. Throws for HTTP errors and non-text types. */
+export async function readPage(url: string, options: Pick<WebToolOptions, 'maxFetchBytes' | 'timeoutMs' | 'allowPrivate'> & { signal?: AbortSignal } = {}): Promise<Page> {
+  const page = await guardedGet(url, { maxBytes: options.maxFetchBytes ?? 2 * 1024 * 1024, timeoutMs: options.timeoutMs ?? 20_000, signal: options.signal, allowPrivate: options.allowPrivate });
+  if (page.status >= 400) throw new Error(`${page.url} returned HTTP ${page.status}.`);
+  const type = page.contentType.split(';')[0].trim().toLowerCase();
+  if (type && !TEXT_TYPES.test(type)) throw new Error(`${page.url} is ${type}; only text pages can be read.`);
+  const raw = new TextDecoder(charset(page.contentType)).decode(page.body);
+  const { title, text } = /html/u.test(type) || (!type && /<html[\s>]/iu.test(raw)) ? htmlToText(raw) : { title: undefined, text: raw };
+  return { url: page.url, status: page.status, contentType: type || 'unknown', ...(title ? { title } : {}), text, truncated: page.truncated };
+}
+
 export function webTools(options: WebToolOptions = {}): ToolSet {
   const maxChars = options.maxChars ?? 20_000;
   const provider = options.search === undefined ? tavily() : options.search;
@@ -116,17 +129,12 @@ export function webTools(options: WebToolOptions = {}): ToolSet {
         offset: z.number().int().min(0).default(0).describe('Character offset into the page text, for long pages.'),
       }),
       async execute({ url, offset }, { abortSignal }) {
-        const page = await guardedGet(url, { maxBytes: options.maxFetchBytes ?? 2 * 1024 * 1024, timeoutMs: options.timeoutMs ?? 20_000, signal: abortSignal, allowPrivate: options.allowPrivate });
-        if (page.status >= 400) throw new Error(`${page.url} returned HTTP ${page.status}.`);
-        const type = page.contentType.split(';')[0].trim().toLowerCase();
-        if (type && !TEXT_TYPES.test(type)) throw new Error(`${page.url} is ${type}; webFetch returns text pages only.`);
-        const raw = new TextDecoder(charset(page.contentType)).decode(page.body);
-        const { title, text } = /html/u.test(type) || (!type && /<html[\s>]/iu.test(raw)) ? htmlToText(raw) : { title: undefined, text: raw };
-        const slice = text.slice(offset, offset + maxChars);
+        const page = await readPage(url, { ...options, signal: abortSignal });
+        const slice = page.text.slice(offset, offset + maxChars);
         return {
-          url: page.url, status: page.status, contentType: type || 'unknown', ...(title ? { title } : {}),
-          text: slice, offset, totalChars: text.length,
-          ...(offset + maxChars < text.length ? { nextOffset: offset + maxChars } : {}),
+          url: page.url, status: page.status, contentType: page.contentType, ...(page.title ? { title: page.title } : {}),
+          text: slice, offset, totalChars: page.text.length,
+          ...(offset + maxChars < page.text.length ? { nextOffset: offset + maxChars } : {}),
           ...(page.truncated ? { note: 'The page was larger than the fetch limit; text after the limit is missing.' } : {}),
         };
       },

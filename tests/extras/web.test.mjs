@@ -98,7 +98,7 @@ test('webFetch reads HTML, gzip, JSON, pages long text and refuses binary types'
 
   assert.equal((await call(tools, 'webFetch', { url: `${base}/hop` })).url, `${base}/page`);
   await assert.rejects(call(tools, 'webFetch', { url: `${base}/loop` }), /Too many redirects/);
-  await assert.rejects(call(tools, 'webFetch', { url: `${base}/file.pdf` }), /text pages only/);
+  await assert.rejects(call(tools, 'webFetch', { url: `${base}/file.pdf` }), /only text pages can be read/);
   await assert.rejects(call(tools, 'webFetch', { url: `${base}/gone` }), /HTTP 410/);
 });
 
