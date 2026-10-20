@@ -47,7 +47,7 @@ store/                 atomic JSON, project lock, sessions, memory, tool switche
 packages/extras        opt-in tool sets on Core's public API (never imported by Core)
 ```
 
-A browsable version with the turn sequence and storage layout is in [architecture.html](architecture.html); [framework.html](framework.html) is a Chinese teaching diagram of the whole framework.
+A browsable version with the turn sequence and storage layout is in [architecture.html](architecture.html); [framework.html](framework.html) is a Chinese teaching diagram of the whole framework, and [call-flow.html](call-flow.html) walks through the actual calls file by file (startup, a task turn, the tool loop, finish and check, approval).
 
 ## Source map
 

@@ -85,7 +85,7 @@ npx lab-agent check <run-id>                                       # recheck, no
 
 - [Guide](docs/GUIDE.md): layout, models, tools, Skills, MCP, checkers, inputs, branding, embedding, composition
 - [Reference](docs/REFERENCE.md): config fields, Agent API, CLI, HTTP API, storage and status meanings
-- [Architecture](docs/ARCHITECTURE.md) and [architecture.html](docs/architecture.html): layers, source map, invariants; [framework.html](docs/framework.html): one-page teaching diagram (Chinese)
+- [Architecture](docs/ARCHITECTURE.md) and [architecture.html](docs/architecture.html): layers, source map, invariants; [framework.html](docs/framework.html): one-page teaching diagram (Chinese); [call-flow.html](docs/call-flow.html): step-by-step call flow through the source, with code (Chinese)
 - [Extras](docs/EXTRAS.md): opt-in tool sets in `packages/extras`, kept out of Core (web search and fetch, HPC jobs, NCBI/UniProt/Ensembl, large-file inspection, environment capture, deep research with checked citations, coding with edits, undo and a sandboxed shell)
 - [Changelog](docs/CHANGELOG.md) · [Validation evidence](docs/evidence/VALIDATION.md)
 - Examples: [FASTA summary](examples/sequence-summary/README.md), [CSV quality](examples/table-quality/README.md), [native composition](examples/advanced/README.md)

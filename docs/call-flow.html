@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>代码调用走向（教学版）· lab-agent-core-vercel</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --fg:#1c1917; --muted:#57534e; --line:#d6d3d1; --code:#f5f5f4;
+    --core:#eff6ff; --core-line:#2563eb; --sdk:#fffbeb; --sdk-line:#d97706; --app:#ecfdf5; --app-line:#059669;
+    --io:#fff; --io-line:#78716c; --store:#f5f5f4; --store-line:#57534e; --arrow:#44403c; --faint:#a8a29e; --hl:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --card:#1d1d1d; --fg:#e7e5e4; --muted:#a8a29e; --line:#3a3a3a; --code:#242424;
+    --core:#14213d; --core-line:#60a5fa; --sdk:#2a1f0a; --sdk-line:#f59e0b; --app:#0b2a20; --app-line:#34d399;
+    --io:#1d1d1d; --io-line:#a8a29e; --store:#242424; --store-line:#a8a29e; --arrow:#d6d3d1; --faint:#57534e; --hl:#60a5fa; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.65 system-ui,-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif; }
+  main { max-width:1220px; margin:0 auto; padding:36px 20px 80px; }
+  h1 { font-size:26px; margin:0 0 6px; } h2 { font-size:19px; margin:44px 0 10px; } h3 { font-size:15px; margin:0 0 6px; }
+  p.lead { color:var(--muted); margin:0 0 14px; max-width:860px; }
+  code, pre, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  code { font-size:13px; background:var(--code); padding:1px 5px; border-radius:4px; }
+  a { color:var(--hl); } a:focus-visible, button:focus-visible { outline:2px solid var(--hl); outline-offset:2px; }
+  nav.toc { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 0; }
+  nav.toc a { color:var(--fg); text-decoration:none; border:1px solid var(--line); border-radius:6px; padding:3px 12px; font-size:13px; background:var(--card); }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:13px; color:var(--muted); margin-top:14px; }
+  .legend span::before { content:""; display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:6px; vertical-align:-2px; border:1.5px solid; }
+  .lg-core::before { background:var(--core); border-color:var(--core-line) !important; }
+  .lg-sdk::before { background:var(--sdk); border-color:var(--sdk-line) !important; }
+  .lg-app::before { background:var(--app); border-color:var(--app-line) !important; }
+  .lg-io::before { background:var(--io); border-color:var(--io-line) !important; }
+  .lg-store::before { background:var(--store); border-color:var(--store-line) !important; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  pre.tree { margin:0; overflow-x:auto; font-size:13px; line-height:1.7; }
+  pre.tree b { font-weight:600; color:var(--hl); } pre.tree i { font-style:normal; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; background:var(--card); border:1px solid var(--line); }
+  th,td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; background:var(--store); }
+  ol.read { margin:0; padding-left:22px; } ol.read li { margin:6px 0; }
+  footer { margin-top:52px; color:var(--muted); font-size:13px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 12px; }
+  .tabs button { font:inherit; font-size:14px; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:5px 12px; cursor:pointer; }
+  .tabs button[aria-selected="true"] { border-color:var(--hl); color:var(--hl); font-weight:600; }
+  .scenario-lead { color:var(--muted); margin:0 0 10px; font-size:14px; }
+  .figure { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; overflow-x:auto; }
+  .figure svg { display:block; width:100%; min-width:980px; height:auto; }
+  svg text { fill:var(--fg); font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:13px; }
+  svg .lane-name { font-size:14px; font-weight:600; } svg .lane-file { fill:var(--muted); font-size:11px; font-family:ui-monospace,Menlo,monospace; }
+  svg .k-core { fill:var(--core); stroke:var(--core-line); } svg .k-sdk { fill:var(--sdk); stroke:var(--sdk-line); }
+  svg .k-app { fill:var(--app); stroke:var(--app-line); } svg .k-io { fill:var(--io); stroke:var(--io-line); }
+  svg .k-store { fill:var(--store); stroke:var(--store-line); }
+  svg .lane-box { stroke-width:1.5; } svg .life { stroke:var(--line); stroke-width:1.5; stroke-dasharray:4 4; }
+  svg .msg { cursor:pointer; } svg .msg .hit { fill:transparent; }
+  svg .msg .line { fill:none; stroke:var(--faint); stroke-width:1.5; }
+  svg .msg .label { fill:var(--muted); font-size:12.5px; } svg .msg .num { fill:var(--muted); font-size:11px; font-weight:600; }
+  svg .msg.past .line { stroke:var(--arrow); } svg .msg.past .label { fill:var(--fg); }
+  svg .msg.active .line { stroke:var(--hl); stroke-width:2.6; } svg .msg.active .label { fill:var(--hl); font-weight:600; } svg .msg.active .num { fill:var(--hl); }
+  svg .msg.active .hit { fill:var(--core); opacity:.6; }
+  svg .m-faint { fill:var(--faint); } svg .m-past { fill:var(--arrow); } svg .m-active { fill:var(--hl); }
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; }
+  .controls button { font:inherit; font-size:13px; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:4px 12px; cursor:pointer; }
+  .controls button:disabled { opacity:.45; cursor:default; } .controls .count { color:var(--muted); font-size:13px; }
+  .split { display:grid; grid-template-columns:minmax(260px,330px) 1fr; gap:12px; align-items:start; }
+  @media (max-width:860px) { .split { grid-template-columns:1fr; } }
+  ol.steps { list-style:none; margin:0; padding:6px; max-height:560px; overflow:auto; }
+  ol.steps button { display:flex; gap:8px; width:100%; text-align:left; font:inherit; font-size:13.5px; color:var(--fg); background:none; border:0; border-radius:6px; padding:5px 8px; cursor:pointer; }
+  ol.steps button .n { color:var(--muted); min-width:22px; font-variant-numeric:tabular-nums; }
+  ol.steps button[aria-current="step"] { background:var(--core); color:var(--hl); font-weight:600; }
+  .detail h3 { font-size:16px; margin:0 0 4px; } .detail .where { font-size:13px; color:var(--muted); margin:0 0 10px; }
+  .detail .where code { color:var(--fg); } .detail p { margin:0 0 10px; }
+  .detail pre { margin:0; background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:12.5px; line-height:1.55; overflow-x:auto; }
+  .detail .note { font-size:12px; color:var(--muted); margin-top:6px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>代码调用走向（教学版）</h1>
+  <p class="lead">顺着真实源码看一次请求怎么走：哪个文件的哪个函数，调用了谁，带着什么数据。路径都在 <code>packages/core/src/</code> 下，行号对应当前 <code>feat/extras</code> 分支。代码片段是从源码里摘的关键几行，略去了类型标注，省略处标了 <code>…</code>。</p>
+  <div class="legend" aria-label="图例">
+    <span class="lg-io">入口 / 外部（浏览器、模型服务、检查程序）</span><span class="lg-core">Core：我们写的</span><span class="lg-sdk">Vercel AI SDK 内核</span><span class="lg-app">应用：你的工具和检查程序</span><span class="lg-store">磁盘存储</span>
+  </div>
+  <nav class="toc" aria-label="页面目录">
+    <a href="#tree">① 调用树总览</a><a href="#trace">② 分场景逐步走</a><a href="#context">③ 隐形参数 ExecutionContext</a><a href="#read">④ 推荐读码顺序</a>
+  </nav>
+</header>
+
+<section id="tree" aria-labelledby="tree-h">
+  <h2 id="tree-h">① 调用树总览：浏览器点「Run task」之后</h2>
+  <p class="lead">缩进表示「谁调用谁」。<b>蓝色</b>是函数，灰色是说明。下一节把它拆成五个场景，一步步看。</p>
+  <div class="card"><pre class="tree">浏览器 POST /api/chat
+└─ <b>createRequestHandler</b>            server/routes.ts:157   <i>校验 Origin 和 token，按路由表分发</i>
+   └─ <b>agent.streamTurn</b> → <b>streamTurn</b>   agent/turn.ts:319
+      ├─ <b>validateRequest</b>               turn.ts:37           <i>消息长度、inputs 只能在 task 模式</i>
+      ├─ <b>gate.acquire</b>                  agent/gate.ts:41     <i>进程内独占 + 跨进程项目锁 store/lock.ts:82</i>
+      ├─ <b>openSession</b> · <b>chooseModel</b>     turn.ts:62 · 79      <i>读会话、核对历史工具调用、选模型</i>
+      ├─ <b>openRun</b>                       turn.ts:88           <i>task 才有：建 runs/&lt;id&gt;/，冻结指纹</i>
+      │  └─ <b>runs.create</b> → <b>createProvenance</b>   runs/store.ts:111 · runs/provenance.ts:131
+      ├─ <b>attachmentParts</b> · sessions.save    turn.ts:329          <i>附件存引用，会话标记 running</i>
+      └─ <b>beginTurn</b>                     turn.ts:276          <i>超时、取消、ExecutionContext</i>
+         ├─ <b>maybeCompact</b>               turn.ts:255          <i>上下文太长先压缩成摘要</i>
+         ├─ <b>startModelStream</b>           turn.ts:167
+         │  ├─ <b>inlineAttachments</b> · convertToModelMessages
+         │  └─ <b>native.stream()</b>  <i>── 进入 Vercel AI SDK 内核循环 ──</i>
+         │     └─ 每一步：<b>prepareStep</b> resources.ts:82 → 调模型 → <b>repairToolCall</b> :42
+         │                → <b>toolApproval</b> :76 → <b>guardTool.execute</b> tools/guard.ts:69 → 具体工具
+         ├─ <b>source.tee()</b>               turn.ts:302          <i>一份给浏览器，一份给收尾</i>
+         └─ <b>completeTurn</b>               agent/finish.ts:168  <i>每一段循环一次</i>
+            ├─ <b>persistStream</b>           finish.ts:65         <i>边收边存会话</i>
+            ├─ <b>waitForToolExecutions</b>   finish.ts:189        <i>工具彻底停下才往下走</i>
+            ├─ <b>pauseRun</b> | <b>nextSegment</b> | <b>finalizeRun</b>   finish.ts:135 · 157 · 110
+            │                              └─ <b>checkRunUnlocked</b>   runs/check.ts:73   <i>预检 → 检查程序 → 再核对</i>
+            └─ finally：sessions.save → <b>lease.release</b>   finish.ts:229</pre></div>
+</section>
+<section id="trace" aria-labelledby="trace-h">
+  <h2 id="trace-h">② 分场景逐步走</h2>
+  <p class="lead">选一个场景，点图里的箭头或左边的步骤，右边会显示这一步在哪个文件、做了什么、关键代码。也可以按「播放」自动走，或用键盘 ← → 切换。</p>
+  <div class="tabs" role="tablist" aria-label="场景" id="tabs"></div>
+  <p class="scenario-lead" id="scenario-lead"></p>
+  <div class="figure" id="figure"></div>
+  <div class="controls" aria-label="步骤控制">
+    <button type="button" id="prev">← 上一步</button>
+    <button type="button" id="play">▶ 播放</button>
+    <button type="button" id="next">下一步 →</button>
+    <span class="count" id="count" aria-live="polite"></span>
+  </div>
+  <div class="split">
+    <div class="card" style="padding:0"><ol class="steps" id="steps" aria-label="步骤列表"></ol></div>
+    <div class="card detail" id="detail" aria-live="polite"></div>
+  </div>
+  <noscript><p class="card">这一节需要 JavaScript。不开 JavaScript 时，请看上面的调用树和下面的表格。</p></noscript>
+</section>
+
+<section id="context" aria-labelledby="context-h">
+  <h2 id="context-h">③ 隐形参数：ExecutionContext</h2>
+  <p class="lead">很多东西不出现在工具参数里，比如「这次是哪个 run」「停止信号」「输出目录」。它们放在 Node 的 <code>AsyncLocalStorage</code> 里（<code>workspace/context.ts:50</code> <code>runWithExecutionContext</code>），沿着 async 调用链自动传下去。所以 <code>readFile</code> 不需要模型告诉它 run id，模型也没法伪造。</p>
+  <table>
+    <thead><tr><th style="width:22%">字段</th><th style="width:30%">谁写入</th><th>谁读取、用来做什么</th></tr></thead>
+    <tbody>
+      <tr><td><code>mode</code></td><td>beginTurn → executionContext（turn.ts:133）</td><td>prepareStep 判断 task-only 的 Python 脚本能不能用</td></tr>
+      <tr><td><code>signal</code></td><td>beginTurn 的 AbortController（超时、Stop 按钮）</td><td>guardTool 合并给每个工具；子进程、检查程序收到后整组杀掉</td></tr>
+      <tr><td><code>runId</code> · <code>outputDirectory</code></td><td>executionContext，仅 task</td><td>workspace 写入只许进 <code>runs/&lt;id&gt;/output</code>；extras 的 citeSource、captureEnvironment、submitJob 用它记录归属</td></tr>
+      <tr><td><code>model</code> · <code>modelKey</code></td><td>chooseModel 选出的模型</td><td>prepareStep 每步换上会话选的模型；subagent 默认沿用；记账</td></tr>
+      <tr><td><code>steering</code></td><td>createSteeringQueue；steerTurn 往里推</td><td>prepareStep 注入下一步；finish 决定要不要再跑一段</td></tr>
+      <tr><td><code>clipped</code></td><td>boundContext 截断长结果时记下全文</td><td>readToolOutput 分段读回</td></tr>
+      <tr><td><code>overBudget</code> · <code>onStep</code> · <code>onContext</code></td><td>executionContext</td><td>stopWhen 判断 token 预算；记录每次模型调用；上下文用量条</td></tr>
+      <tr><td><code>skillBaselines</code> · <code>onSkillLoad</code></td><td>openRun 的 Skill 指纹</td><td>loadSkill 核对指纹并标记「用过」</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="read" aria-labelledby="read-h">
+  <h2 id="read-h">④ 推荐读码顺序</h2>
+  <div class="card"><ol class="read">
+    <li><code>agent/create.ts</code>：对外接口长什么样，<code>runTask</code> 和 <code>chat</code> 其实都是 <code>streamTurn</code> + 读完流。</li>
+    <li><code>agent/turn.ts</code>：从 <code>streamTurn</code>（319 行）往下读到 <code>beginTurn</code> 和 <code>startModelStream</code>，就是场景 ②。</li>
+    <li><code>agent/resources.ts</code>：内核怎么造，6 个钩子各做什么，就是场景 ③ 的前半。</li>
+    <li><code>tools/guard.ts</code> → <code>workspace/workspace.ts</code>：每个工具调用都经过的那一层。</li>
+    <li><code>agent/finish.ts</code> 的 <code>completeTurn</code>（168 行）：一个 <code>for(;;)</code> 循环管住暂停、插话、返工，就是场景 ④。</li>
+    <li><code>runs/check.ts</code>：三段式检查。然后再看 <code>approval.ts</code>、<code>steering.ts</code>、<code>compact.ts</code> 这些单项能力。</li>
+    <li>最后看 <code>packages/extras/src/</code>：都是普通的 <code>tool()</code>，只用 Core 的公开接口。</li>
+  </ol></div>
+</section>
+
+<footer>
+  相关：<a href="framework.html">framework.html</a>（框架总图）· <a href="architecture.html">architecture.html</a> · <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>（逐文件职责）· <a href="REFERENCE.md">REFERENCE.md</a> · <a href="EXTRAS.md">EXTRAS.md</a>
+</footer>
+</main>
+<script type="text/plain" id="c-boot-1">// cli/main.ts:112
+env = await loadProjectEnvironment(root);
+const config = await loadAgentConfig(root, values.config);
+
+// config/load.ts:122
+const jiti = createJiti(import.meta.url, { moduleCache: false });
+const imported = await jiti.import(file);              // 直接 import agent.config.ts
+const exported = imported.default ?? imported;
+return defineAgent(typeof exported === 'function' ? await exported({ root, env }) : exported);</script>
+<script type="text/plain" id="c-boot-2">// cli/main.ts:143
+agent = await createAgent(config);
+
+// agent/create.ts:36
+export async function createAgent(input: AgentConfig) {
+  const res = await assembleAgent(input);              // 一次性装配
+  …
+  return { streamTurn, respond, approve, steer, compact, runTask, chat, tools, memory, mcp, … };
+}</script>
+<script type="text/plain" id="c-boot-3">// agent/resources.ts:132
+export async function assembleAgent(input: AgentConfig) {
+  const workspace = await createWorkspace(root, config.fileAccess);   // 模型的文件视野
+  const skills = await discoverSkills(workspace, config.skillsDir);
+  const instructions = await readInstructions(config);                // AGENTS.md
+  const sessions = createSessionStore(root);
+  const runs = createRunStore(config);
+  const switches = toolSwitches(await readToolSettings(root));         // .lab-agent/tools.json
+  const res = { config, root, workspace, skills, sessions, runs, switches,
+    ...(await connectTools(config, workspace, skills, instructions, switches)), … };</script>
+<script type="text/plain" id="c-boot-4">// agent/resources.ts:105  connectTools
+const mcp = await connectMcp(servers, { cwd: config.root, env: config.env });
+const tools = createTools(workspace, config, skills, mcp.tools);
+
+// tools/index.ts:20  固定顺序注册，重名直接报错，每个都包一层 guardTool
+for (… of builtinTools(workspace, skills, maxBytes)) register(name, native);
+for (… of searchTools(workspace)) register(name, native);
+if (config.memory !== false) for (… of memoryTools(workspace.root)) register(name, native);
+if (python) register('runPython', python);
+for (… of config.tools ?? {}) register(name, native);   // 你的工具、extras 的工具
+for (… of mcpTools) register(name, native);</script>
+<script type="text/plain" id="c-boot-5">// agent/resources.ts:51
+function approvalRule(config: AgentConfig, tools: ToolSet) {
+  const listed = approvalMatcher(config.approval);
+  const own = name => tools[name]?.needsApproval;
+  return {
+    // 静态：helper 过滤、Capabilities 显示、alwaysAllow 校验
+    needsApproval: name => listed(name) || (own(name) != null && own(name) !== false),
+    // 每次调用：needsApproval 可以是一个看输入的函数
+    async pauses(name, input, toolCallId, messages) { … },
+  };
+}</script>
+<script type="text/plain" id="c-boot-6">// agent/resources.ts:66
+return new ToolLoopAgent({
+  model: config.model,
+  tools,
+  instructions: { role: 'system', content: systemInstructions(…) },  // 可缓存的固定前缀
+  stopWhen: [isStepCount(maxSteps), () => getExecutionContext()?.overBudget?.() ?? false],
+  toolApproval: async ({ toolCall, messages }) => …,
+  repairToolCall: repairToolName,
+  prepareStep: async options => { … },
+  maxRetries,
+});</script>
+<script type="text/plain" id="c-boot-7">// agent/create.ts:49
+// Record leftovers from a previous crash. Another live process may own the project; that is fine.
+try {
+  await recover();                     // → recoverInterrupted，持锁执行
+} catch (error) {
+  if (!(error instanceof BusyError)) { await res.mcp.close(); throw error; }
+}
+// agent/recovery.ts:10  running 的会话 → interrupted，running 的 run → failed
+// awaiting_approval 不动；绝不重放任何工具或检查程序</script>
+<script type="text/plain" id="c-boot-8">// cli/main.ts:179
+server = await createHttpServer(agent, { port: command === 'chat' ? 0 : port });
+
+// server/http.ts:60
+server.listen(options.port ?? 0, '127.0.0.1', accept);   // 只监听本机
+handler = createRequestHandler(agent, { origin: url, token, demo, assets });
+// 同一个进程：/ 给 Workbench 静态页，/api/* 给接口</script>
+<script type="text/plain" id="c-send-1">// apps/workbench/components/conversation.tsx  DefaultChatTransport
+prepareSendMessagesRequest: ({ messages }) => {
+  const last = messages.at(-1);
+  if (last?.role === 'assistant') return { body: { sessionId: session.id, messages: [last] } };   // 审批回复
+  return { body: {
+    sessionId: session.id, mode: modeRef.current, model: modelRef.current,
+    ...(modeRef.current === 'task' && boundInputsRef.current.length ? { inputs: [...boundInputsRef.current] } : {}),
+    ...(attachmentsRef.current.length ? { attachments: [...attachmentsRef.current] } : {}),
+    messages: messages.filter(message => message.role === 'user').slice(-1),   // 只发最新一条
+  } };
+},</script>
+<script type="text/plain" id="c-send-2">// server/routes.ts:157  createRequestHandler
+return async (request) => {
+  if (!sameOrigin(request)) return fail('Only this local origin is allowed.', 403);
+  if (url.pathname === '/api/bootstrap' && request.method === 'GET') return json({ token, demo });
+  if (!url.pathname.startsWith('/api/')) return await serveAsset(assets, request, url);
+  if (!authorized(request)) return fail('Invalid local workbench token.', 403);   // timingSafeEqual
+  const route = routes[`${request.method} ${url.pathname}`];
+  return route ? await route(request, url) : fail('Unknown API endpoint.', 404);
+};</script>
+<script type="text/plain" id="c-send-3">// server/routes.ts:74  'POST /api/chat'
+const input = await parseBody(request, chatSchema);
+const last = input.messages.at(-1);
+const decisions = decisionsFromMessage(last);
+if (decisions.length) {
+  turn = await agent.respond({ sessionId: input.sessionId, approvals: decisions });   // 场景 ⑤
+} else {
+  turn = await agent.streamTurn({
+    sessionId: input.sessionId, messageId: last.id, message: …, mode: input.mode,
+    model: input.model, inputs: input.inputs, attachments: input.attachments, …
+  });
+}</script>
+<script type="text/plain" id="c-send-4">// agent/turn.ts:319  streamTurn
+res.gate.assertIdle();                                  // 已有操作在跑 → BusyError
+const { mode, inputs } = validateRequest(request);
+
+// agent/turn.ts:37
+if (!request.message.trim() || request.message.length > MAX_MESSAGE_CHARS) throw new InputError('Message must contain 1–64000 characters.');
+const mode = request.mode ?? 'chat';
+if (request.inputs !== undefined && mode !== 'task') throw new InputError('Input bindings are available in task mode only.');</script>
+<script type="text/plain" id="c-send-5">// agent/turn.ts:322
+const lease = await res.gate.acquire();
+
+// agent/gate.ts:41
+assertIdle();
+releaseLock = await acquireOperation(root);
+
+// store/lock.ts:82  .lab-agent/operation.lock
+await publishOwner(root, LOCK, owner);                  // 原子创建，已存在则 EEXIST
+…
+if (ownerIsAlive(existing)) throw new BusyError(`Project is in use by PID ${existing.pid} on ${existing.host}.`);
+await claimRecovery(root, existing, owner);             // 持有者已死：安全回收</script>
+<script type="text/plain" id="c-send-6">// agent/turn.ts:62  openSession
+const session = request.sessionId ? await res.sessions.load(request.sessionId) : await res.sessions.create(…);
+if (session.state === 'awaiting_approval') throw new InputError('This session is waiting for a tool approval. …');
+await assertSessionCompatible(res, session);   // 历史里的工具调用必须还能通过当前工具的校验
+
+// agent/turn.ts:79  chooseModel
+const selected = selectModel(res.config, requested ?? saved);   // "default" 或 config.models 的 key</script>
+<script type="text/plain" id="c-send-7">// agent/turn.ts:88  openRun（只有 task）
+const run = await res.runs.create(request.message, sessionId, { inputs, model: … });
+//   runs/store.ts:111 → runs/provenance.ts:131 createProvenance：
+//   输入文件、代码、配置、检查程序的 sha256，以及 environment（Node、平台、Python、conda）
+run.provenance!.skills = await snapshotSkills(res.workspace, res.skills);
+run.provenance!.memory = (await listMemory(res.root)).entries.map(entry => ({ name, sha256: sha256(entry.content), updatedAt }));
+const { disabled, alwaysAllow } = res.switches.settings;
+if (disabled.length || alwaysAllow.length) run.provenance!.toolSettings = { disabled, alwaysAllow };
+await res.runs.save(run);</script>
+<script type="text/plain" id="c-send-8">// agent/turn.ts:329
+const files = await attachmentParts(res.workspace, request.attachments);   // 类型、大小、文件权限
+if (mode === 'task') run = await openRun(res, request, session.id, selected, inputs);
+if (run && files.length) run.provenance!.attachments = await Promise.all(… hashFile(res.root, path));
+session.messages.push({ id, role: 'user', parts: [{ type: 'text', text: request.message }, ...files] });
+session.state = 'running';
+session.activeRunId = run?.id;
+await res.sessions.save(session);                   // 先落盘：之后无论如何都有终态记录
+return await beginTurn(res, lease, { signal: request.signal, mode, session, selected, run, resumed: false });</script>
+<script type="text/plain" id="c-send-9">// agent/turn.ts:276  beginTurn
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(new DOMException('Task exceeded its execution timeout.', 'TimeoutError')), limitsOf(res.config).timeoutMs);
+lease.activate({ sessionId: session.id, runId: run?.id, mode, startedAt: … }, controller);   // 从这里起 Stop 有效
+const outcome: TurnOutcome = { model: …, steps: [] };
+const context = executionContext(res, mode, controller.signal, outcome, selected, run);   // turn.ts:133
+res.activeTurn = { sessionId: session.id, context };   // steer() 靠它找到插话队列
+if (!options.resumed) await runWithExecutionContext(context, () => maybeCompact(res, session, context, outcome));</script>
+<script type="text/plain" id="c-send-10">// agent/turn.ts:167  startModelStream
+const visible = await inlineAttachments(res.workspace, unsummarized(session));   // 附件此刻才读成 data URL
+const messages = [...summary, ...await convertToModelMessages(visible, { tools: res.tools, ignoreIncompleteToolCalls: true })];
+if (run) appendToLastUserMessage(messages, taskDeliveryNote(output, run.provenance!.inputs));
+if (res.config.memory !== false) appendToLastUserMessage(messages, memoryIndexNote(entries));
+result = await runWithExecutionContext(context, () => res.native.stream({
+  messages, abortSignal: context.signal,
+  onStepEnd: event => { … recordStep(res, outcome, stepRecord('main', key, event)); },
+}));</script>
+<script type="text/plain" id="c-send-11">// agent/turn.ts:302  beginTurn（续）
+const [persisted, client] = source.tee();
+const completed = runWithExecutionContext(context, () => completeTurn(state, persisted));   // 存档和收尾
+// Completion is observed even when an HTTP client disconnects.
+void completed.catch(() => {});
+lease.track(completed);
+return {
+  sessionId: session.id, runId: run?.id,
+  stream: detachable(client), completed,            // 浏览器断开只取消自己这份
+  cancel: () => controller.abort(new DOMException('Canceled by user.', 'AbortError')),
+};</script>
+<script type="text/plain" id="c-send-12">// server/routes.ts:89
+return createUIMessageStreamResponse({
+  stream: turn.stream,
+  headers: { 'x-lab-session-id': turn.sessionId, ...(turn.runId ? { 'x-lab-run-id': turn.runId } : {}) },
+});
+// 浏览器的 useChat 按 SSE 收 UIMessageChunk：文字、工具调用、metadata（模型、上下文、用量）</script>
+<script type="text/plain" id="c-loop-1">// agent/resources.ts:82  prepareStep：SDK 每次调用模型前都会调它
+prepareStep: async options => {
+  const context = getExecutionContext();
+  const steered = injectSteering(context?.steering, options.messages);       // 运行中的插话
+  const bounded = projectContext(steered, maxContextChars, context?.clipped);  // 截断长结果、丢最早轮次
+  const prepared = await config.prepareStep?.({ ...options, messages: bounded });   // 应用自己的钩子
+  const activeTools = … .filter(name => switches.enabled(name) && !(pythonOff && name === 'runPython'));
+  const final = boundContext(prepared?.messages ?? bounded, maxContextChars, context?.clipped);
+  context?.onContext?.(final.stats);                // 上下文用量条
+  return { ...(context?.model ? { model: context.model } : {}), ...prepared, activeTools, messages: final.messages };
+},</script>
+<script type="text/plain" id="c-loop-2">// 这一步在 node_modules/ai 里，不是我们写的
+// SDK 把 system + messages + 工具定义（名字、描述、JSON Schema）发给模型服务，
+// 用 maxRetries（默认 2）对 429 / 5xx 退避重试，然后流式读取返回。
+// 测试里这一端是 tests/fixtures/model-server.mjs，一个确定性的本地 HTTP 假模型。</script>
+<script type="text/plain" id="c-loop-3">// agent/resources.ts:42
+const repairToolName: ToolCallRepairFunction<ToolSet> = async ({ toolCall, tools, error }) => {
+  if (!NoSuchToolError.isInstance(error)) return null;          // 参数错误交给 SDK 回报给模型
+  const toolName = repairedToolName(error.availableTools ?? Object.keys(tools), toolCall.toolName);
+  return toolName ? { ...toolCall, toolName } : null;           // "list_files" → "listFiles"
+};</script>
+<script type="text/plain" id="c-loop-4">// agent/resources.ts:76  toolApproval：每个工具调用执行前
+toolApproval: async ({ toolCall, messages }) =>
+  !switches.allowed(toolCall.toolName)                         // 没设「始终允许」
+  && await rule.pauses(toolCall.toolName, toolCall.input, toolCall.toolCallId, messages)   // 且需要审批
+    ? 'user-approval' : 'not-applicable',
+// 'user-approval' → SDK 不执行这个调用，见场景 ⑤</script>
+<script type="text/plain" id="c-loop-5">// tools/guard.ts:69  guardTool：createTools 给每个工具都包了这一层
+execute(input, options) {
+  const context = getExecutionContext();
+  const signals = [context?.signal, options.abortSignal].filter(Boolean);
+  const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];   // turn 的 Stop + SDK 的取消
+  const owner = context?.signal ?? signal;
+  const run = callback => runWithExecutionContext({ ...context, signal }, callback);
+  const result = run(() => execute(input, { ...options, abortSignal: signal }));
+  return trackExecution(Promise.resolve(result).then(value => {   // 登记「正在执行」
+    signal?.throwIfAborted();
+    assertOutputSize(value, maxBytes);                              // maxToolOutputBytes
+    return value;
+  }), owner);
+},</script>
+<script type="text/plain" id="c-loop-6">// tools/builtin.ts:39 readFile → workspace.read  (workspace/workspace.ts:178, 184)
+const resolve = async (file, options = {}) => {
+  const candidate = await paths(file);     // 字面路径和解析符号链接后的路径，都必须在项目内
+  await authorize(candidate, options);     // 密钥、.lab-agent/、硬链接、readRoots、写权限
+  return candidate.canonical;
+};
+async function read(file, maxBytes = DEFAULT_MAX_BYTES, options = {}) {
+  const candidate = await resolve(file, options);
+  const handle = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  … if (info.size > maxBytes) throw new Error(`File exceeds ${maxBytes} bytes.`);
+}</script>
+<script type="text/plain" id="c-loop-7">// agent/resources.ts:73
+stopWhen: [isStepCount(maxSteps), () => getExecutionContext()?.overBudget?.() ?? false],
+// 没停：SDK 把工具结果作为 tool 消息加进对话，回到「prepareStep → 调模型」。
+// 模型不再要工具（finishReason 'stop'）时，这一段流结束。
+// 同一步里的多个工具调用并发执行，几个 runSubagent 就是这样并行的。</script>
+<script type="text/plain" id="c-loop-8">// agent/finish.ts:65  persistStream
+const messages = readUIMessageStream({ stream, terminateOnError: false, message: … });
+for await (const message of messages) {
+  const index = session.messages.findIndex(item => item.id === message.id);
+  if (index < 0) session.messages.push(message);
+  else session.messages[index] = message;
+  if (Date.now() - lastSaved > SAVE_INTERVAL_MS) {     // 最多每 100 ms 存一次
+    await res.sessions.save(session);
+    lastSaved = Date.now();
+  }
+}</script>
+<script type="text/plain" id="c-fin-1">// agent/finish.ts:168  completeTurn：每一段循环一次
+for (;;) {
+  text = await persistStream(state, stream);
+  pending = pendingApprovals(session);                  // 最后一条回答里有没有等审批的调用
+  if (!pending.length || controller.signal.aborted || outcome.error) {
+    pending = [];
+    outcome.error = terminalError(outcome, controller.signal, res.errorMessage);
+  }
+  …
+}
+// terminalError：没正常 'stop'（步数、预算用尽、出错）就记为错误，不会假装完成</script>
+<script type="text/plain" id="c-fin-2">// agent/finish.ts:187
+// SDK abort ends the model stream before in-flight tools necessarily settle.
+// Keep ownership until subprocess and custom-tool cleanup has finished.
+await waitForToolExecutions(controller.signal);
+
+// tools/guard.ts:28
+export async function waitForToolExecutions(signal: AbortSignal): Promise<void> {
+  for (;;) {
+    const pending = executing.get(signal);
+    if (!pending?.size) return;
+    await Promise.allSettled([...pending]);
+  }
+}</script>
+<script type="text/plain" id="c-fin-3">// agent/finish.ts:190  三选一
+if (pending.length) {                                   // ① 有工具在等审批
+  if (run) await pauseRun(state, run, text);
+  break;
+}
+if (!outcome.error && steering.pending.length) {        // ② 有插话：同一把锁再跑一段
+  stream = await nextSegment(state, steering.pending.splice(0).join('\n\n'), 'steer');
+  continue;
+}
+steering.accepting = false;
+if (!run) break;                                        // chat 没有 run，到此为止
+await finalizeRun(state, run, text);                    // ③ 记录终态并检查</script>
+<script type="text/plain" id="c-fin-4">// agent/finish.ts:110  finalizeRun
+const timedOut = signal.aborted && signal.reason?.name === 'TimeoutError';
+const aborted = signal.aborted && !timedOut;
+run.execution = aborted ? 'aborted' : outcome.error ? 'failed' : 'completed';
+run.text = text;
+applyTotals(state, run);                                // 用量、花费、每次模型调用
+run.finishedAt = new Date().toISOString();
+run.artifacts = await listArtifacts(res.root, run.id);
+if (run.provenance) run.provenance.artifacts = await hashArtifacts(res.root, run.id, run.artifacts);
+await res.runs.save(run);
+if (run.execution === 'completed') {
+  Object.assign(run, await checkRunUnlocked(res.config, run.id, signal, { kind: run.repairs ? 'repair' : 'initial' }));
+}</script>
+<script type="text/plain" id="c-fin-5">// runs/check.ts:73  checkRunUnlocked
+// A terminated check must never leave its previous verdict as current.
+run.pendingCheck = { id: randomUUID(), startedAt: …, kind };
+run.delivery = 'not_checked';
+await store.save(run);
+
+// runs/check.ts:112  1. Preflight
+artifactHashes = await hashArtifacts(config.root, run.id, run.artifacts);
+const changes = await baselineChanges(config, run);     // 输入、代码、用过的 Skill
+if (inputChanges.length || codeChanges.length) throw new Error(`Provenance changed since execution: …`);
+// 抛错 → delivery = 'failed'，检查程序根本不会运行</script>
+<script type="text/plain" id="c-fin-6">// runs/check.ts:138  2. Checker：argv 直接执行，不经过 shell
+const [command, ...args] = config.validation.command;
+const result = await runCommand(command, args, {
+  cwd: config.root, signal,
+  timeoutMs: config.validation.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS,
+  env: { ...config.env, AGENT_ROOT: config.root, AGENT_RUN_ID: run.id, AGENT_RUN_DIR: run.directory,
+    AGENT_OUTPUT_DIR: resolve(run.directory, 'output'), AGENT_CHECK_FILE: checkFile },
+});
+if (result.code !== 0) throw new Error(`Checker exited ${result.code}. See validation.log.`);
+report = await readCheckerReport(config.root, run, checkFile);   // { status, checks, issues }</script>
+<script type="text/plain" id="c-fin-7">// runs/check.ts:166  3. Final integrity
+// Checkers can modify files even when exiting nonzero or writing bad JSON.
+const finalHashes = await hashArtifacts(config.root, run.id, finalArtifacts);
+const changedDuringCheck = changedHashes(artifactHashes, finalHashes);
+({ inputChanges, codeChanges } = await baselineChanges(config, run));
+const changed = [...changedDuringCheck, ...inputChanges, ...codeChanges];
+if (changed.length) report = { ...report, status: 'failed', issues: [...report.issues, `Files changed during validation: …`] };
+
+await writeLatest(config.root, run, report, log);
+run.delivery = report.status;                          // passed / partial / failed
+return record(report, log);                            // 追加一条不可变的 checks[] 记录</script>
+<script type="text/plain" id="c-fin-8">// agent/finish.ts:201
+const repair = await repairMessage(state, run);         // 没配 repairAttempts、次数用完或已取消 → undefined
+if (!repair) break;
+run.repairs = (run.repairs ?? 0) + 1;
+run.execution = 'running';
+await res.runs.save(run);
+stream = await nextSegment(state, repair, 'repair');    // 回到场景 ③，同一个 run、同一把锁
+
+// finish.ts:150  返工消息里写明检查程序报告的问题
+`Automatic repair ${n} of ${limit}: the independent checker reported delivery "${run.delivery}".\n` …</script>
+<script type="text/plain" id="c-fin-9">// agent/finish.ts:219  finally：无论成功、失败还是暂停都会走到
+} finally {
+  state.cleanup();                                      // 清超时、解绑 activeTurn
+  splitSteering(session);                               // 插话拆成独立的用户消息
+  addSessionUsage(session, outcome, !state.resumed);
+  session.state = pending.length ? 'awaiting_approval' : 'idle';
+  session.error = outcome.error;
+  if (!pending.length) delete session.activeRunId;
+  try {
+    await res.sessions.save(session);
+  } finally {
+    await state.lease.release();                        // 到这里才放锁
+  }
+}</script>
+<script type="text/plain" id="c-appr-1">// toolApproval 返回 'user-approval' 后，SDK 不执行这个调用：
+// 它把工具调用以 state: 'approval-requested' 写进流，并结束这一步。
+// 存进会话历史的样子（UIMessage part）：
+{ type: 'tool-stamp', toolCallId: 'call_1', state: 'approval-requested',
+  input: { note: 'first' }, approval: { id: '…' } }</script>
+<script type="text/plain" id="c-appr-2">// agent/approval.ts:22
+export function pendingApprovals(session: SessionRecord): PendingApproval[] {
+  const last = session.messages.at(-1);
+  if (last?.role !== 'assistant') return [];
+  return last.parts.filter(isToolPart)
+    .filter(part => part.state === 'approval-requested' && part.approval)
+    .map(part => ({ approvalId: part.approval.id, toolCallId: part.toolCallId, toolName: toolName(part), input: part.input }));
+}
+// agent/finish.ts:135  pauseRun：不是终态，崩溃恢复也不动它
+run.execution = 'awaiting_approval';
+run.finishReason = 'tool-approval';
+// finally 里 session.state = 'awaiting_approval'，然后放锁</script>
+<script type="text/plain" id="c-appr-3">// apps/workbench/components/message.tsx  审批卡片
+<Button aria-label={`Deny ${name}`} onClick={() => onApprove(id, false)}>Deny</Button>
+<Button aria-label={`Always allow ${name}`} onClick={() => onApprove(id, true, { toolName: name })}>Always allow</Button>
+<Button aria-label={`Approve ${name}`} onClick={() => onApprove(id, true)}>Approve</Button>
+
+// components/conversation.tsx  approve()
+if (always) await api(token, '/api/tools', { method: 'PUT', body: JSON.stringify({ name: always.toolName, alwaysAllow: true }) });
+void addToolApprovalResponse({ id: approvalId, approved, … });   // useChat 自动发回</script>
+<script type="text/plain" id="c-appr-4">// agent/approval.ts:63  服务端只取决定，不信任消息里的其他内容
+export function decisionsFromMessage(message) {
+  if (message.role !== 'assistant') return [];
+  return message.parts
+    .filter(part => part.state === 'approval-responded' && part.approval && typeof part.approval.approved === 'boolean')
+    .map(part => ({ approvalId: String(part.approval.id), approved: part.approval.approved, … }));
+}
+// server/routes.ts:80
+turn = await agent.respond({ sessionId: input.sessionId, approvals: decisions });</script>
+<script type="text/plain" id="c-appr-5">// agent/turn.ts:360  respondTurn
+const decisions = parseDecisions(input.approvals);
+const lease = await res.gate.acquire();                 // 重新拿锁
+session = await res.sessions.load(input.sessionId);
+if (session.state !== 'awaiting_approval') throw new InputError('This session has no tool call waiting for approval.');
+await assertSessionCompatible(res, session);
+applyDecisions(session, decisions);                     // approval.ts:42
+
+// approval.ts:42  只认服务端自己记录的待审批调用，而且每个都要回答
+if (!pending.has(decision.approvalId)) throw new InputError(`No pending approval ${decision.approvalId} in this session.`);
+if (missing.length) throw new InputError(`Answer every pending tool call: …`);</script>
+<script type="text/plain" id="c-appr-6">// agent/turn.ts:372
+if (session.activeRunId) {
+  run = await res.runs.load(session.activeRunId);
+  run.execution = 'running';
+  await res.runs.save(run);
+}
+session.state = 'running';
+await res.sessions.save(session);
+return await beginTurn(res, lease, { …, session, selected, run, resumed: true });   // turn.ts:383
+// resumed: true → 不压缩、不算新 turn；SDK 看到 approval-responded 的调用：
+//   同意 → 执行；拒绝 → output-denied。接着写进同一条 assistant 消息。</script>
+<script type="text/plain" id="c-appr-7">// 被同意的调用照常走 tools/guard.ts:69 guardTool.execute：
+// 取消信号、输出上限、在途登记都一样。审批只决定「跑不跑」，不绕过任何边界。
+// 之后的收尾和场景 ④ 完全一样：persistStream → waitForToolExecutions → finalizeRun → 检查 → 放锁。</script>
+<script>
+// 泳道：[名称, 文件, 颜色类别]
+const LANES = {
+  cli: ['CLI', 'cli/main.ts', 'io'], config: ['配置', 'config/load.ts', 'core'], create: ['createAgent', 'agent/create.ts', 'core'],
+  resources: ['装配', 'agent/resources.ts', 'core'], tools: ['工具集', 'tools/index.ts', 'core'], server: ['本地服务', 'server/http.ts', 'core'],
+  browser: ['浏览器', 'apps/workbench', 'io'], routes: ['路由', 'server/routes.ts', 'core'], turn: ['turn', 'agent/turn.ts', 'core'],
+  store: ['锁 · 会话 · run', 'gate · lock · runs', 'store'], sdk: ['AI SDK 内核', 'ToolLoopAgent', 'sdk'], finish: ['收尾', 'agent/finish.ts', 'core'],
+  hooks: ['Core 钩子', 'agent/resources.ts', 'core'], model: ['模型服务', 'OpenAI / Anthropic', 'io'], guard: ['guardTool', 'tools/guard.ts', 'core'],
+  tool: ['具体工具', 'builtin · workspace', 'core'], inflight: ['在途工具', 'tools/guard.ts', 'core'], runs: ['run 记录', 'runs/store.ts', 'store'],
+  check: ['检查', 'runs/check.ts', 'core'], checker: ['检查程序', 'validation.command', 'app'], session: ['会话 · 锁', 'sessions · lock', 'store'],
+  approved: ['被同意的工具', 'tools/guard.ts', 'app'],
+};
+// 每一步：f 从哪条泳道，t 到哪条，label 箭头文字，title 标题，where 位置，desc 说明，code 代码块 id
+const SCENARIOS = [
+  { id: 'boot', name: '① 启动 lab-agent dev', lanes: ['cli', 'config', 'create', 'resources', 'tools', 'server'],
+    lead: '进程启动时只做一次：读配置、装配工具和内核、清理上次崩溃的残留、起本地服务。之后每次发消息都复用这些东西。',
+    steps: [
+      { f: 'cli', t: 'config', label: 'loadAgentConfig', title: '读配置', where: 'cli/main.ts:112 · config/load.ts:122', code: 'c-boot-1', desc: '先读项目的 `.env`，再用 jiti 直接 import `agent.config.ts`（TypeScript 不用先编译），最后交给 `defineAgent` 校验每个字段。' },
+      { f: 'cli', t: 'create', label: 'createAgent(config)', title: 'createAgent：唯一的入口', where: 'cli/main.ts:143 · agent/create.ts:36', code: 'c-boot-2', desc: 'CLI、Workbench、你自己的代码都走这里。它返回的对象就是全部对外接口：`streamTurn`、`approve`、`runTask`、`tools.update` 等。' },
+      { f: 'create', t: 'resources', label: 'assembleAgent', title: '一次性装配', where: 'agent/resources.ts:132', code: 'c-boot-3', desc: '建模型的文件视野（`workspace`）、发现 Skill、读 `AGENTS.md`、建会话和 run 的存储、读工具开关，然后连 MCP、组工具、造内核。' },
+      { f: 'resources', t: 'tools', label: 'createTools', title: '按固定顺序组工具', where: 'agent/resources.ts:105 · tools/index.ts:20', code: 'c-boot-4', desc: '内置 → 搜索 → 记忆 → runPython → 配置里的 `tools`（你的、extras 的）→ MCP。名字重复直接报错。每个工具都套一层 `guardTool`，场景 ③ 会看到它。' },
+      { f: 'resources', t: 'resources', label: 'approvalRule', title: '审批规则', where: 'agent/resources.ts:51', code: 'c-boot-5', desc: '一个工具「需要审批」有两种来源：写在 `config.approval` 里，或者工具自己声明 `needsApproval`。静态版本给 helper 过滤和界面用，按调用版本给内核每次执行前用。' },
+      { f: 'resources', t: 'resources', label: 'new ToolLoopAgent', title: '造内核', where: 'agent/resources.ts:66', code: 'c-boot-6', desc: '把工具和 6 个钩子交给 Vercel 的 `ToolLoopAgent`。模型 ↔ 工具的循环由 SDK 负责，Core 只在这些钩子里介入。' },
+      { f: 'create', t: 'create', label: 'recover()', title: '崩溃恢复', where: 'agent/create.ts:49 · agent/recovery.ts:10', code: 'c-boot-7', desc: '上次进程崩溃时还在 running 的会话标成 interrupted，run 标成 failed。等审批的不动，任何工具都不重放。别的进程正在用这个项目时跳过。' },
+      { f: 'cli', t: 'server', label: 'createHttpServer', title: '起本地服务', where: 'cli/main.ts:179 · server/http.ts:60', code: 'c-boot-8', desc: '只监听 127.0.0.1，每次启动生成新 token。同一个服务发 Workbench 静态页面，也处理 `/api/*`；`lab-agent chat` 的终端界面也走这套接口。' },
+    ] },
+  { id: 'send', name: '② 发一条 task 消息', lanes: ['browser', 'routes', 'turn', 'store', 'sdk', 'finish'],
+    lead: '从点「Run task」到模型开始说话。这一段全在 Core 里：校验、拿锁、建记录、准备上下文，最后把控制权交给 SDK 内核。',
+    steps: [
+      { f: 'browser', t: 'routes', label: 'POST /api/chat', title: '浏览器只发最新一条', where: 'apps/workbench/components/conversation.tsx', code: 'c-send-1', desc: '`useChat` 只发最新一条用户消息，加上模式、模型、绑定的输入和附件。历史由服务端自己从磁盘读，不信任客户端发来的历史。' },
+      { f: 'routes', t: 'routes', label: 'Origin + token', title: '先过安全检查', where: 'server/routes.ts:157', code: 'c-send-2', desc: 'Host 和 Origin 必须是本机这个地址，跨站请求 403；再用 `timingSafeEqual` 比对 Bearer token；然后按「方法 + 路径」查路由表。' },
+      { f: 'routes', t: 'turn', label: 'agent.streamTurn', title: '分流：新消息还是审批回复', where: 'server/routes.ts:74', code: 'c-send-3', desc: '最新消息带着审批决定就走 `agent.respond`（场景 ⑤），否则是新的一轮，走 `streamTurn`。' },
+      { f: 'turn', t: 'turn', label: 'validateRequest', title: '校验请求', where: 'agent/turn.ts:319 · :37', code: 'c-send-4', desc: '消息 1–64000 字符；`inputs` 只能在 task 模式；`assertIdle` 先挡掉已经有操作在跑的情况。' },
+      { f: 'turn', t: 'store', label: 'gate.acquire', title: '拿项目锁', where: 'agent/turn.ts:322 · agent/gate.ts:41 · store/lock.ts:82', code: 'c-send-5', desc: '两道：进程内的 gate，加跨进程的锁文件 `.lab-agent/operation.lock`。持有者还活着就 `BusyError`（HTTP 409）；已经死了就安全回收。' },
+      { f: 'turn', t: 'store', label: 'openSession · chooseModel', title: '读会话、选模型', where: 'agent/turn.ts:62 · :79', code: 'c-send-6', desc: '等审批的会话不收新消息；历史里的工具调用必须还能通过当前工具的校验，否则报 `SessionCompatibilityError`，历史不改。' },
+      { f: 'turn', t: 'store', label: 'openRun：冻结指纹', title: '建 run，冻结指纹', where: 'agent/turn.ts:88 · runs/store.ts:111 · runs/provenance.ts:131', code: 'c-send-7', desc: '只有 task 才有 run。建 `runs/<id>/`，记下输入、代码、Skill、记忆、工具开关、运行环境的指纹。之后检查时拿它比对，看有没有被改过。' },
+      { f: 'turn', t: 'store', label: '存用户消息', title: '存用户消息', where: 'agent/turn.ts:329', code: 'c-send-8', desc: '附件校验后只存 `project:` 引用。会话标成 running 并立刻落盘，这样之后不管出什么事，都有一条终态记录。' },
+      { f: 'turn', t: 'turn', label: 'beginTurn', title: '超时、取消、执行上下文', where: 'agent/turn.ts:276', code: 'c-send-9', desc: '建 AbortController 和超时定时器；`lease.activate` 之后 Stop 按钮才有效；建 ExecutionContext（见第 ③ 节）。上下文太长就先压缩旧轮次。' },
+      { f: 'turn', t: 'sdk', label: 'native.stream()', title: '交给 SDK 内核', where: 'agent/turn.ts:167', code: 'c-send-10', desc: '附件这时才读成 data URL；历史转成模型消息；任务说明和记忆目录临时附在最新用户消息后面，不进历史。然后启动 SDK 的流，进入场景 ③。' },
+      { f: 'turn', t: 'finish', label: 'tee → completeTurn', title: '流分两份', where: 'agent/turn.ts:302', code: 'c-send-11', desc: '一份给 `completeTurn` 存档和收尾（场景 ④），一份给浏览器。浏览器那份可以随时断开：关掉页面不会停掉任务，只有 Stop 会。' },
+      { f: 'routes', t: 'browser', label: 'SSE 流', title: '浏览器边收边显示', where: 'server/routes.ts:89', code: 'c-send-12', desc: '以 AI SDK 的 UI 消息流（SSE）返回，响应头带会话和 run 的 id。界面边收边画出工具调用和回答。' },
+    ] },
+  { id: 'loop', name: '③ 内核循环里的一次工具调用', lanes: ['sdk', 'hooks', 'model', 'guard', 'tool', 'finish'],
+    lead: '循环本身是 SDK 的：调模型 → 要工具就执行 → 结果塞回 → 再调模型。Core 的钩子在固定位置介入，同一步里的多个工具调用并发执行。',
+    steps: [
+      { f: 'sdk', t: 'hooks', label: 'prepareStep', title: '每次调模型前：prepareStep', where: 'agent/resources.ts:82', code: 'c-loop-1', desc: '注入插话；裁剪上下文（长结果截断、超预算从最早一轮丢起，只裁给模型看的那份）；跑应用自己的 `prepareStep`；从 `activeTools` 拿掉被关掉的工具。' },
+      { f: 'sdk', t: 'model', label: '消息 + 工具定义', title: '调模型', where: 'node_modules/ai（SDK 内部）', code: 'c-loop-2', desc: 'SDK 把消息和工具定义发给模型服务。遇到 429 / 5xx 按 `maxRetries` 退避重试。这一步不是我们写的。' },
+      { f: 'model', t: 'sdk', label: '文字 + 工具调用', title: '模型要用工具', where: '流式返回', code: 'c-loop-2', desc: '模型流式返回文字，以及「调用哪个工具、传什么参数」。' },
+      { f: 'sdk', t: 'hooks', label: 'repairToolCall', title: '纠正写错的工具名', where: 'agent/resources.ts:42', code: 'c-loop-3', desc: '工具名不存在时，规范化后只有一个工具对得上就改成它（`list_files` → `listFiles`）。参数错误不在这里修，SDK 会把校验错误回给模型让它重试。' },
+      { f: 'sdk', t: 'hooks', label: 'toolApproval', title: '执行前：要不要审批', where: 'agent/resources.ts:76', code: 'c-loop-4', desc: '设了「始终允许」直接放行；否则按审批规则判断。返回 `user-approval` 就不执行，转到场景 ⑤。' },
+      { f: 'sdk', t: 'guard', label: 'guardTool.execute', title: '所有工具都过这一层', where: 'tools/guard.ts:69', code: 'c-loop-5', desc: '合并 turn 的停止信号和 SDK 的取消信号；在 ExecutionContext 里执行；登记「正在执行」（收尾时要等它）；结果超过 `maxToolOutputBytes` 就报错。' },
+      { f: 'guard', t: 'tool', label: 'readFile → workspace', title: '具体工具干活', where: 'tools/builtin.ts:39 · workspace/workspace.ts:178', code: 'c-loop-6', desc: '以 `readFile` 为例：路径（包括解析符号链接后的）必须在项目内；密钥、`.lab-agent/`、硬链接拒绝；配了 `readRoots` 只能读里面的。写文件还要有活动的 task。' },
+      { f: 'tool', t: 'sdk', label: '工具结果', title: '结果回到 SDK', where: 'tools/guard.ts:86', code: 'c-loop-5', desc: '结果作为 tool 消息加进对话。抛出的错误也会作为工具错误回给模型，模型可以换个方法再试。' },
+      { f: 'sdk', t: 'hooks', label: 'stopWhen：继续？', title: '还要不要继续', where: 'agent/resources.ts:73', code: 'c-loop-7', desc: '没到步数上限、没到 token 预算、模型还要工具，就回到第 1 步再来一轮。模型给出最终回答时，这一段结束。' },
+      { f: 'sdk', t: 'finish', label: 'UI 流 → persistStream', title: '边跑边存', where: 'agent/finish.ts:65', code: 'c-loop-8', desc: '内核的输出被转成 UI 消息块，`persistStream` 边读边更新会话，最多每 100 ms 存一次盘。流结束后进入场景 ④。' },
+    ] },
+  { id: 'finish', name: '④ 收尾、检查、返工', lanes: ['finish', 'inflight', 'runs', 'check', 'checker', 'session'],
+    lead: 'completeTurn 是一个 for(;;) 循环，每一段流走一圈：存完 → 等工具停下 → 三选一。只有正常结束的 task 才会被独立检查，不合格可以自动返工。',
+    steps: [
+      { f: 'finish', t: 'finish', label: '存完 · 查待审批', title: '这一段流存完了', where: 'agent/finish.ts:168', code: 'c-fin-1', desc: '把流读完存进会话，看最后一条回答里有没有等审批的调用。模型没正常停下（步数、预算用尽、出错）就记成错误，不会假装完成。' },
+      { f: 'finish', t: 'inflight', label: 'waitForToolExecutions', title: '等工具彻底停下', where: 'agent/finish.ts:187 · tools/guard.ts:28', code: 'c-fin-2', desc: '点了 Stop，SDK 的流会先结束，但子进程和工具的清理可能还没完。这里一直等到登记的执行全部结束，所以锁不会提前放掉。' },
+      { f: 'finish', t: 'finish', label: '三选一', title: '暂停、再跑一段，还是结束', where: 'agent/finish.ts:190', code: 'c-fin-3', desc: '有待审批 → 暂停（场景 ⑤）；有插话 → 追加成用户消息，同一把锁再跑一段；都没有 → chat 到此结束，task 进入下一步。' },
+      { f: 'finish', t: 'runs', label: 'finalizeRun', title: '记录 run 终态', where: 'agent/finish.ts:110', code: 'c-fin-4', desc: 'execution 记成 completed / failed / aborted（超时算 failed）；累加用量和花费；列出 output/ 里的文件并算哈希。只有 completed 才去检查。' },
+      { f: 'runs', t: 'check', label: '预检', title: '检查第 1 段：预检', where: 'runs/check.ts:73 · :112', code: 'c-fin-5', desc: '先把 delivery 置回 not_checked，免得留下旧结论。重新算输入、代码、用过的 Skill 的哈希，和建 run 时比。变了直接 failed，检查程序根本不跑。' },
+      { f: 'check', t: 'checker', label: 'argv，无 shell', title: '检查第 2 段：跑检查程序', where: 'runs/check.ts:138', code: 'c-fin-6', desc: '用环境变量告诉检查程序输出目录和报告写到哪。非零退出、超时、报告格式不对，都算 failed。' },
+      { f: 'checker', t: 'check', label: 'check.json', title: '检查程序写报告', where: 'AGENT_CHECK_FILE', code: 'c-fin-6', desc: '报告是 `{ status: passed | partial | failed, checks, issues }`。检查程序是应用写的，Core 只认这份报告。' },
+      { f: 'check', t: 'runs', label: '再核对 → delivery', title: '检查第 3 段：再核对', where: 'runs/check.ts:166', code: 'c-fin-7', desc: '再算一遍哈希：检查程序改了产物、输入或代码，结论强制 failed。最后 `delivery` 取报告的结论，追加一条不可变的检查记录。' },
+      { f: 'finish', t: 'finish', label: '要返工？', title: '自动返工', where: 'agent/finish.ts:201', code: 'c-fin-8', desc: '不合格且还有 `repairAttempts`：把检查程序报告的问题写成一条用户消息，同一个 run、同一把锁回到场景 ③。次数用完就停下，保留真实的结论。' },
+      { f: 'finish', t: 'session', label: '存会话 → 放锁', title: '无论如何都会走到', where: 'agent/finish.ts:219', code: 'c-fin-9', desc: '`finally` 里：插话拆成独立消息、累计用量、会话切回 idle 或 awaiting_approval、存盘，最后才放锁。' },
+    ] },
+  { id: 'approval', name: '⑤ 审批：暂停与继续', lanes: ['sdk', 'finish', 'browser', 'routes', 'turn', 'approved'],
+    lead: '需要审批的调用不会执行：run 和会话停在 awaiting_approval，锁放掉，等人回答。回答后不是新的一轮，而是接着同一条回答往下跑。',
+    steps: [
+      { f: 'sdk', t: 'sdk', label: '不执行，标记待审批', title: 'SDK 停在这个调用上', where: 'toolApproval → user-approval', code: 'c-appr-1', desc: '这个调用以 `approval-requested` 状态写进流，这一步结束，工具没有执行。' },
+      { f: 'sdk', t: 'finish', label: '流结束', title: '收尾发现待审批', where: 'agent/approval.ts:22 · agent/finish.ts:135', code: 'c-appr-2', desc: '`pendingApprovals` 在最后一条回答里找到它。`pauseRun` 把 run 标成 awaiting_approval，这不是终态，崩溃恢复也不会动它；会话同样标记，然后放锁。' },
+      { f: 'finish', t: 'browser', label: '显示审批卡片', title: '界面等你回答', where: 'apps/workbench/components/message.tsx', code: 'c-appr-3', desc: '输入框锁住，显示「拒绝 / 始终允许 / 同意」。「始终允许」先 `PUT /api/tools` 把这个工具加进白名单，再当作同意。' },
+      { f: 'browser', t: 'routes', label: '带审批决定的消息', title: '决定发回服务端', where: 'agent/approval.ts:63 · server/routes.ts:80', code: 'c-appr-4', desc: '服务端只从消息里取决定（approvalId、同意与否、理由），消息里的其他内容一概不用。' },
+      { f: 'routes', t: 'turn', label: 'respondTurn', title: '重新拿锁、核对决定', where: 'agent/turn.ts:360 · agent/approval.ts:42', code: 'c-appr-5', desc: '会话必须正处于 awaiting_approval；只接受服务端自己记录的待审批调用，而且每个都要回答。伪造的 approvalId 会被拒绝。' },
+      { f: 'turn', t: 'sdk', label: 'beginTurn(resumed)', title: '接着同一条回答跑', where: 'agent/turn.ts:372 · :383', code: 'c-appr-6', desc: 'run 回到 running。不是新的一轮，不压缩历史。SDK 看到已回答的调用：同意的执行，拒绝的记成 output-denied，继续写进同一条 assistant 消息。' },
+      { f: 'sdk', t: 'approved', label: 'guardTool.execute', title: '被同意的调用照常执行', where: 'tools/guard.ts:69', code: 'c-appr-7', desc: '审批只决定跑不跑，不绕过任何边界：取消信号、输出上限、文件权限都一样。之后的收尾和场景 ④ 相同。' },
+    ] },
+];
+// ─── 时序图 ───────────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+const W = 1200, PAD = 100, TOP = 104, ROW = 46;
+const el = (name, attrs = {}, text) => {
+  const node = document.createElementNS(NS, name);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+let current = SCENARIOS[0];
+let index = 0;
+let timer;
+
+function laneX(lanes, key) {
+  return PAD + lanes.indexOf(key) * (W - 2 * PAD) / (lanes.length - 1);
+}
+
+function renderFigure(scenario) {
+  const height = TOP + scenario.steps.length * ROW + 10;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${height}`, role: 'img', 'aria-label': `${scenario.name}的调用时序图` });
+  const defs = el('defs');
+  for (const state of ['faint', 'past', 'active']) {
+    const marker = el('marker', { id: `m-${state}`, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto' });
+    marker.append(el('path', { d: 'M0,0 L10,5 L0,10 z', class: `m-${state}` }));
+    defs.append(marker);
+  }
+  svg.append(defs);
+  scenario.lanes.forEach(key => {
+    const [name, file, kind] = LANES[key];
+    const x = laneX(scenario.lanes, key);
+    svg.append(el('line', { class: 'life', x1: x, y1: 70, x2: x, y2: height - 6 }));
+    svg.append(el('rect', { class: `lane-box k-${kind}`, x: x - 86, y: 16, width: 172, height: 52, rx: 8 }));
+    svg.append(el('text', { class: 'lane-name', x, y: 38, 'text-anchor': 'middle' }, name));
+    svg.append(el('text', { class: 'lane-file', x, y: 57, 'text-anchor': 'middle' }, file));
+  });
+  scenario.steps.forEach((step, i) => {
+    const y = TOP + i * ROW;
+    const x1 = laneX(scenario.lanes, step.f);
+    const x2 = laneX(scenario.lanes, step.t);
+    const group = el('g', { class: 'msg', 'data-step': i });
+    const self = x1 === x2;
+    const last = scenario.lanes.indexOf(step.f) === scenario.lanes.length - 1;
+    const left = self ? (last ? x1 - 230 : x1 - 10) : Math.min(x1, x2) - 10;
+    const right = self ? (last ? x1 + 10 : x1 + 230) : Math.max(x1, x2) + 10;
+    group.append(el('rect', { class: 'hit', x: left, y: y - 24, width: right - left, height: ROW - 4, rx: 6 }));
+    const line = self
+      ? el('path', { class: 'line', d: last ? `M${x1},${y - 8} h-44 v18 h40` : `M${x1},${y - 8} h44 v18 h-40` })
+      : el('path', { class: 'line', d: `M${x1},${y} L${x2 + (x2 > x1 ? -2 : 2)},${y}` });
+    group.append(line);
+    const text = `${i + 1}  ${step.label}`;
+    if (self) group.append(el('text', { class: 'label', x: last ? x1 - 52 : x1 + 52, y: y + 5, 'text-anchor': last ? 'end' : 'start' }, text));
+    else group.append(el('text', { class: 'label', x: (x1 + x2) / 2, y: y - 8, 'text-anchor': 'middle' }, text));
+    group.addEventListener('click', () => { stop(); select(i); });
+    svg.append(group);
+  });
+  const figure = document.getElementById('figure');
+  figure.replaceChildren(svg);
+}
+// ─── 步骤列表、详情、控制 ─────────────────────────────────────────────────
+const escape = text => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const inline = text => escape(text).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+function renderSteps(scenario) {
+  const list = document.getElementById('steps');
+  list.replaceChildren(...scenario.steps.map((step, i) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.innerHTML = `<span class="n">${i + 1}</span><span>${escape(step.title)}</span>`;
+    button.addEventListener('click', () => { stop(); select(i); });
+    item.append(button);
+    return item;
+  }));
+}
+
+function select(i) {
+  const steps = current.steps;
+  index = Math.max(0, Math.min(steps.length - 1, i));
+  const step = steps[index];
+  document.querySelectorAll('#figure .msg').forEach(group => {
+    const n = Number(group.dataset.step);
+    const state = n === index ? 'active' : n < index ? 'past' : 'faint';
+    group.classList.toggle('active', state === 'active');
+    group.classList.toggle('past', state === 'past');
+    group.querySelector('.line').setAttribute('marker-end', `url(#m-${state})`);
+  });
+  document.querySelectorAll('#steps button').forEach((button, n) => {
+    if (n === index) button.setAttribute('aria-current', 'step');
+    else button.removeAttribute('aria-current');
+  });
+  document.querySelector('#steps button[aria-current]')?.scrollIntoView({ block: 'nearest' });
+  const code = document.getElementById(step.code)?.textContent.replace(/^\n/, '') ?? '';
+  const [from, to] = [LANES[step.f][0], LANES[step.t][0]];
+  document.getElementById('detail').innerHTML =
+    `<h3>${index + 1}. ${escape(step.title)}</h3>` +
+    `<p class="where">${escape(from)} → ${escape(to)}　·　<code>${escape(step.where)}</code></p>` +
+    `<p>${inline(step.desc)}</p><pre></pre><p class="note">摘录自源码：略去了类型标注和次要参数，<code>…</code> 是省略的部分，中文注释是我加的。行号对应当前分支。</p>`;
+  document.querySelector('#detail pre').textContent = code;
+  document.getElementById('count').textContent = `第 ${index + 1} / ${steps.length} 步`;
+  document.getElementById('prev').disabled = index === 0;
+  document.getElementById('next').disabled = index === steps.length - 1;
+}
+
+function show(scenario) {
+  stop();
+  current = scenario;
+  document.querySelectorAll('#tabs button').forEach(button => button.setAttribute('aria-selected', String(button.dataset.id === scenario.id)));
+  document.getElementById('scenario-lead').textContent = scenario.lead;
+  renderFigure(scenario);
+  renderSteps(scenario);
+  select(0);
+}
+
+function stop() {
+  clearInterval(timer);
+  timer = undefined;
+  document.getElementById('play').textContent = '▶ 播放';
+}
+
+function play() {
+  if (timer) return stop();
+  if (index === current.steps.length - 1) select(0);
+  document.getElementById('play').textContent = '■ 停止';
+  timer = setInterval(() => {
+    if (index >= current.steps.length - 1) return stop();
+    select(index + 1);
+  }, 2200);
+}
+
+const tabs = document.getElementById('tabs');
+for (const scenario of SCENARIOS) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.setAttribute('role', 'tab');
+  button.dataset.id = scenario.id;
+  button.textContent = scenario.name;
+  button.addEventListener('click', () => show(scenario));
+  tabs.append(button);
+}
+document.getElementById('prev').addEventListener('click', () => { stop(); select(index - 1); });
+document.getElementById('next').addEventListener('click', () => { stop(); select(index + 1); });
+document.getElementById('play').addEventListener('click', play);
+document.addEventListener('keydown', event => {
+  if (event.target.closest?.('input, textarea, select')) return;
+  if (event.key === 'ArrowRight') { stop(); select(index + 1); event.preventDefault(); }
+  if (event.key === 'ArrowLeft') { stop(); select(index - 1); event.preventDefault(); }
+});
+show(SCENARIOS[0]);
+</script>
+</body>
+</html>
