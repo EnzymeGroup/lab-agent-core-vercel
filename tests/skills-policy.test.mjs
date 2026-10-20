@@ -7,8 +7,8 @@ import test from 'node:test';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { createAgent, createWorkspace, defineAgent, modelFromEnv, runWithExecutionContext } from '../packages/core/dist/index.js';
-import { discoverSkills, loadSkill, snapshotSkills } from '../packages/core/dist/skills.js';
-import { createTools, pythonToolAllowed } from '../packages/core/dist/tools.js';
+import { discoverSkills, loadSkill, snapshotSkills } from '../packages/core/dist/index.js';
+import { createTools, pythonToolAllowed } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
 
 const options = { toolCallId: 'skills-policy-test', messages: [], context: {} };

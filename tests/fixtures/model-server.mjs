@@ -3,6 +3,7 @@ import http from 'node:http';
 /** A deterministic local OpenAI-compatible server. It never creates artifacts.
  * Real AI SDK HTTP requests, tool execution and stream parsing remain in use.
  * options.plan may be [{name,args}] or (request) => that array.
+ * options.failFirst = N answers the first N completion requests with 503 (retry tests).
  */
 export async function startModelServer(options = {}) {
   const requests = [];
@@ -31,6 +32,11 @@ export async function startModelServer(options = {}) {
       const user = typeof turn[0]?.content === 'string' ? turn[0].content : JSON.stringify(turn[0]?.content ?? '');
       const system = messages.filter(m => m.role === 'system' || m.role === 'developer').map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
       const skillNames = [...system.matchAll(/^- ([\w-]+): /gm)].map(match => match[1]);
+      const completions = requests.filter(item => item.path === '/v1/chat/completions').length;
+      if (completions <= (options.failFirst ?? 0)) {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Deterministic transient failure', type: 'server_error' } })); return;
+      }
       const scenario = options.scenario ?? (/\[model-error\]/i.test(user) ? 'error' : /\[wait\]/i.test(user) ? 'slow' : 'normal');
       if (scenario === 'error') {
         res.writeHead(503, { 'content-type': 'application/json' });

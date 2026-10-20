@@ -15,7 +15,7 @@ test('official terminal UI uses shared HTTP session path in a real pseudo-termin
   await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent)(?:\/|$)/.test(source) });
   const config = path.join(root, 'agent.config.ts');
   await writeFile(config, (await readFile(config, 'utf8')).replace("'lab-agent-core-vercel'", JSON.stringify(pathToFileURL(path.join(repository, 'packages/core/dist/index.js')).href)));
-  const result = await runCommand('python3', [path.join(repository, 'scripts/tui-smoke.py'), process.execPath, path.join(repository, 'packages/core/dist/cli.js'), 'chat', '--root', root], {
+  const result = await runCommand('python3', [path.join(repository, 'scripts/tui-smoke.py'), process.execPath, path.join(repository, 'packages/core/dist/cli/main.js'), 'chat', '--root', root], {
     cwd: repository, timeoutMs: 20_000, env: { LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'deterministic-demo', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url },
   });
   assert.equal(result.code, 0, result.stderr); assert.equal(JSON.parse(result.stdout).completed, true);

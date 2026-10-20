@@ -141,6 +141,34 @@ test('HTTP authentication, local origin, authoritative history and artifact conf
   assert.equal((await fetch(`${server.url}/api/artifact?runId=${run.id}&path=output%2F..%2Frun.json`, { headers: auth })).status, 400);
 });
 
+test('explicit local forwarded origin preserves Host, Origin and token boundaries', async t => {
+  const { agent, root } = await setup(t);
+  await writeFile(path.join(root, 'index.html'), '<h1>Workbench</h1>');
+  for (const browserOrigin of ['http://evil.example:54523', 'https://localhost:54523', 'http://localhost:54523/path', 'http://user@localhost:54523', 'http://localhost:54523/?query', 'http://localhost:54523/#fragment']) {
+    await assert.rejects(createHttpServer(agent, { browserOrigin }), /HTTP loopback origin/);
+  }
+  const browserOrigin = 'http://localhost:54523';
+  const server = await createHttpServer(agent, { port: 0, browserOrigin, assets: root });
+  t.after(() => server.close());
+  const request = (route, headers = {}) => new Promise((resolve, reject) => {
+    const incoming = httpRequest(`${server.url}${route}`, { headers: { Host: 'localhost:54523', ...headers } }, response => {
+      response.resume(); response.once('end', () => resolve(response.statusCode));
+    });
+    incoming.once('error', reject); incoming.end();
+  });
+  assert.equal(await request('/'), 200);
+  assert.equal(await request('/api/bootstrap'), 200);
+  assert.equal(await request('/api/state', { Origin: browserOrigin }), 403);
+  const auth = { Authorization: `Bearer ${server.token}`, Origin: browserOrigin };
+  assert.equal(await request('/api/state', auth), 200);
+  assert.equal(await request('/api/bootstrap', { Host: 'localhost:54524' }), 403);
+  assert.equal(await request('/api/bootstrap', { Origin: server.url }), 403);
+  assert.equal(await request('/api/bootstrap', { Origin: 'http://evil.example' }), 403);
+  assert.equal(await request('/api/bootstrap', { 'Sec-Fetch-Site': 'cross-site' }), 403);
+  assert.equal((await fetch(`${server.url}/api/bootstrap`)).status, 200);
+  assert.equal((await fetch(`${server.url}/api/bootstrap`, { headers: { Origin: browserOrigin } })).status, 403);
+});
+
 test('actual killed worker is recovered as interrupted without replaying tools', async t => {
   const { root, config, fixture, agent } = await setup(t);
   await agent.close();
@@ -182,7 +210,8 @@ test('native external tool registration uses SDK execution and keeps Tool input/
 });
 
 test('ten consecutive tool tasks retain full history while model context drops complete older turns', async t => {
-  const { agent, fixture } = await setup(t, { config: { limits: { maxContextChars: 8000 } } });
+  // Compaction off: this covers the drop-oldest fallback (compaction has its own test).
+  const { agent, fixture } = await setup(t, { config: { limits: { maxContextChars: 8000 }, compaction: false } });
   let sessionId;
   for (let index = 0; index < 10; index++) {
     const run = await agent.runTask(`Summarize FASTA, task ${index + 1}.`, { sessionId });

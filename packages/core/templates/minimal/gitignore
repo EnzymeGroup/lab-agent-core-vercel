@@ -1,6 +1,0 @@
-node_modules/
-.env
-.lab-agent/
-runs/
-output/
-__pycache__/

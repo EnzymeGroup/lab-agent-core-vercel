@@ -11,7 +11,7 @@ import { startModelServer } from './fixtures/model-server.mjs';
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const core = pathToFileURL(path.join(repository, 'packages/core/dist/index.js')).href;
-const cli = path.join(repository, 'packages/core/dist/cli.js');
+const cli = path.join(repository, 'packages/core/dist/cli/main.js');
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^LAB_AGENT_|^(OPENAI|ANTHROPIC)_(API_KEY|BASE_URL)$/u.test(key)));
 async function command(file, args, options = {}) {
   try { return { ...(await exec(file, args, { maxBuffer: 4_000_000, ...options })), code: 0 }; }
@@ -94,7 +94,7 @@ test('doctor reports config errors and redacts scoped dotenv credentials', async
   assert.match(result.stdout, /redacted/);
 });
 
-test('installed basic/python templates and minimal alias bootstrap from one current tarball', { timeout: 180_000 }, async t => {
+test('installed basic and python templates bootstrap from one current tarball', { timeout: 180_000 }, async t => {
   const root = await temporary(t);
   const packed = await command('npm', ['pack', '--workspace', 'lab-agent-core-vercel', '--json', '--pack-destination', root], { cwd: repository });
   assert.equal(packed.code, 0, packed.stderr);
@@ -107,7 +107,7 @@ test('installed basic/python templates and minimal alias bootstrap from one curr
   const bin = path.join(root, 'node_modules/.bin/lab-agent');
   const create = path.join(root, 'node_modules/.bin/create-lab-agent');
   const env = { ...cleanEnv(), LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'onboarding-fixture', LAB_AGENT_API_KEY: 'local-fixture-only', LAB_AGENT_BASE_URL: fixture.url };
-  for (const template of ['basic', 'python', 'minimal']) {
+  for (const template of ['basic', 'python']) {
     const project = path.join(root, template);
     const created = await command(create, [project, '--template', template], { cwd: root, env });
     assert.equal(created.code, 0, created.stderr);

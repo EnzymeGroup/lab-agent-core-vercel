@@ -104,6 +104,6 @@ test('npm-packed package runs two Python applications outside the repository', {
   assert.equal(initialized.code, 0, initialized.stderr);
   await readFile(path.join(scaffold, '.agents/skills/sequence-summary/SKILL.md'), 'utf8');
   assert.ok(packageInfo.files.some(file => file.path === 'workbench/index.html'));
-  assert.ok(packageInfo.files.some(file => file.path === 'templates/minimal/agent.config.ts'));
-  assert.ok(packageInfo.files.some(file => file.path === 'docs/QUICKSTART.md'));
+  assert.ok(packageInfo.files.some(file => file.path === 'templates/python/agent.config.ts'));
+  assert.ok(packageInfo.files.some(file => file.path === 'docs/GUIDE.md'));
 });

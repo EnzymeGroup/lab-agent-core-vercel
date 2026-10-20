@@ -1,97 +1,143 @@
-# Architecture and source map
+# Architecture
 
-Core is the execution/delivery layer; AI SDK owns the model/tool loop and native message protocol. The Next.js app exports static files bundled with the npm package. The installed Node backend serves those files and the only execution API. There is no separate Next.js execution server.
+Core is the execution and delivery layer. The AI SDK owns the model/tool loop and the message protocol; Core adds sessions, runs, checks, safety boundaries and one local HTTP server. The Next.js workbench is a static export served by that server; there is no second execution server.
 
 ```mermaid
-flowchart TD
-  CLI[Installed CLI] --> Turn[Core streamTurn]
-  Browser[Next.js static workbench] --> HTTP[Loopback HTTP API]
-  HTTP --> Turn
-  SDK[Application runTask / chat] --> Turn
-  Turn --> Native[AI SDK ToolLoopAgent]
-  Native --> Tools[Native tools / Skills / Python / MCP]
-  Turn --> Sessions[Persistent UIMessage sessions]
-  Turn --> Runs[Run records and output files]
-  Runs --> Check[Independent delivery checker]
-  Check --> Delivery[check.json and validation.log]
+flowchart LR
+  CLI[CLI / TUI] --> Turn
+  Browser[Workbench] --> HTTP[server/] --> Turn
+  App[Your code] --> Turn[agent/turn.ts]
+  Turn --> SDK[AI SDK ToolLoopAgent]
+  SDK --> Tools[tools/: built-ins · Python · Skills · MCP · yours]
+  Turn --> Sessions[store/sessions.ts]
+  Turn --> Finish[agent/finish.ts] --> Runs[runs/store.ts] --> Check[runs/check.ts]
 ```
 
-## Source responsibilities
+## Life of a task turn
+
+1. `agent/turn.ts` validates the request, then `agent/gate.ts` takes the in-process gate and the project lock (`store/lock.ts`).
+2. Crash leftovers are recovered (`agent/recovery.ts`); the session is loaded and checked against current tool schemas.
+3. For a task, `runs/store.ts` creates `runs/<id>/` and `runs/provenance.ts` freezes the inputs, code and Skill fingerprints.
+4. The user message is saved. If the model's view would reach the compaction threshold, older turns are summarized into `session.summary` (`agent/compact.ts`). The native stream starts with Core's bounded context (`agent/prompt.ts`); the memory index is appended to the latest user message of each segment, never stored.
+5. The stream is split in two: the UI gets a detachable copy, and `agent/finish.ts` consumes the other to persist history.
+6. When the stream ends, `finish.ts` waits for tools to settle, then takes one of three exits:
+   - a tool call needs approval (`agent/approval.ts`): the run and session become `awaiting_approval` and the lock is released. `respondTurn` later continues the same assistant message and run;
+   - steering text is still queued (`agent/steering.ts`): it is appended as a user message and another stream starts on the same lock;
+   - otherwise the run's terminal state is recorded and the check runs (`runs/check.ts`). With `repairAttempts`, a failed or partial check appends a repair message and streams again.
+7. Session usage is added up, steering parts are split into user messages, and the lock is released.
+
+One turn can therefore hold several native streams ("segments"), all under one lock, one timeout and one run. Only the first is streamed to the UI; the workbench restores later segments from the saved session.
+
+## Layers
+
+Imports only point downward. Each layer can be read and tested without the ones above it.
+
+```
+cli/  server/          entry points: command table, loopback HTTP + workbench
+agent/                 turn lifecycle: gate → turn → finish, recovery, prompt
+tools/   runs/         model tools (built-ins, Python, Skills, MCP) · run records, provenance, checks
+config/                defineAgent, .env, modelFromEnv
+workspace/             the model's file view, execution context, subprocesses
+store/                 atomic JSON, project lock, sessions, hashing
+```
+
+A browsable version with the turn sequence and storage layout is in [architecture.html](architecture.html); [framework.html](framework.html) is a Chinese teaching diagram of the whole framework.
+
+## Source map
 
 | Path | Responsibility |
 | --- | --- |
-| packages/core/src/index.ts | Public package exports |
-| packages/core/src/types.ts | Configuration, sessions, runs, check and streaming contracts |
-| packages/core/src/config.ts | Typed config, trusted config loading, .env and project instructions |
-| packages/core/src/models.ts | Explicit environment credentials and AI SDK provider registry |
-| packages/core/src/agent.ts | Native Agent construction, shared streaming lifecycle, context projection, interruption records, cancellation and task/chat adapters |
-| packages/core/src/session.ts | Persistent full UIMessage history and session state |
-| packages/core/src/storage.ts | Atomic records, IDs, project lock and interrupted-process recovery |
-| packages/core/src/workspace.ts | Canonical path confinement and protected internal metadata |
-| packages/core/src/skills.ts | Metadata discovery and progressive full-Skill loading |
-| packages/core/src/tools.ts | Native file/Skill/Python tools and output/cancellation bounds |
-| packages/core/src/process.ts | Shell-free subprocess execution, bounded output and process-group cancellation |
-| packages/core/src/mcp.ts | Native MCP connections, tool namespacing and cleanup |
-| packages/core/src/delivery.ts | Independent check execution, report validation and rechecking |
-| packages/core/src/provenance.ts | Streamed source/artifact SHA256, version/config/validator baselines and comparison |
-| packages/core/src/files.ts | Explicit bounded input imports, safe raster/text/CSV previews and artifact handles |
-| packages/core/src/diagnostics.ts | Static native tool schema inspection and explicit environment/connectivity diagnosis |
-| packages/core/src/http.ts | Authenticated API, native SSE, artifacts and static assets |
-| packages/core/src/cli.ts | CLI adapters for the same Agent lifecycle |
-| packages/core/src/create.ts | Project scaffolding entry point |
-| packages/core/src/scaffold.ts | Copy the installed minimal template into an empty project |
-| packages/core/templates/minimal/ | Installable Python-first starter with Skill and independent validator |
-| packages/core/templates/basic/ | Native TypeScript tool starter with cooperative cancellation |
-| packages/core/templates/python/ | Python-first starter with independent source-based validator |
-| apps/workbench/ | Next.js static client using native useChat and DefaultChatTransport |
-| apps/workbench/app/layout.tsx | Document metadata, theme initialization and shared page shell |
-| apps/workbench/app/page.tsx | Static page entry |
-| apps/workbench/app/workbench.tsx | Project/session state, native transport, task/chat submission and cancellation |
-| apps/workbench/app/globals.css | Responsive layout, interaction states and light/dark styles |
-| apps/workbench/app/icon.svg | Editable application icon |
-| apps/workbench/components/conversation.tsx | Conversation display and message rendering |
-| apps/workbench/components/message.tsx | Text, reasoning and native tool argument/result/error parts |
-| apps/workbench/components/run-panel.tsx | Execution/delivery status, check report, recheck and artifacts |
-| apps/workbench/components/input-files.tsx | Explicit input import and insertion of paths into the composer |
-| apps/workbench/components/artifact-preview.tsx | Escaped text/Markdown, bounded tables and authenticated raster preview |
-| apps/workbench/components/capabilities.tsx | Read-only native model/Skill/tool/MCP/file-policy inspection |
-| apps/workbench/components/run-evidence.tsx | Original/latest check observations and provenance baselines |
-| apps/workbench/lib/api.ts | Bootstrap credential, authenticated API requests and response errors |
-| scripts/bundle-web.mjs | Copy built static assets into the distributable package |
-| scripts/demo.mjs | Labeled deterministic model fixture plus persistent local demo project |
-| scripts/prepare-package.mjs | Validate built assets and copy root documentation/license/examples into npm package |
-| scripts/pack-core.mjs | Create the local installable release-candidate tarball |
-| scripts/compare-pi.mjs | Optional matched two-application comparison against an existing Pi build |
-| scripts/live-smoke.mjs | Explicit opt-in real-provider smoke; never substitutes a fixture for missing credentials |
-| scripts/validate-installed-live.mjs | External npm installation, unaltered existing CSV source, real-provider tools and independent tamper/recheck trial |
-| scripts/benchmark-large.mjs | Opt-in full-allocation large-file hashing/checking benchmark with no model latency |
-| scripts/tui-smoke.py | Real POSIX terminal driver for the official TUI integration test |
-| scripts/check-docs.mjs | Check local documentation links and required lifecycle/evidence language |
-| tests/fixtures/model-server.mjs | Real HTTP streaming/nonstreaming OpenAI-compatible deterministic fixture |
-| tests/fixtures/mcp-server.mjs | Real local stdio MCP fixture |
-| tests/consumers/installed.test.mjs | npm-packed external install, Python apps, session continuation and served UI |
-| tests/resources.test.mjs | Resource, path, Skill, subprocess, model and MCP contract tests |
-| tests/lifecycle.test.mjs | Full tasks, durable tool histories, actual worker crash, HTTP and ten-turn context behavior |
-| tests/delivery.test.mjs | Checker states, stale reports, partial CLI exit code and timeouts |
-| tests/review.test.mjs | Independently reproduced concurrency, cleanup, report integrity and error-mapping regressions |
-| tests/access.test.mjs | Sensitive aliases, current-run policy, restricted reads and noncooperative native cancellation |
-| tests/provenance.test.mjs | Original evidence, rechecks, tampering, legacy records and actual killed-checker-worker recovery |
-| tests/files.test.mjs | Upload authorization/type/size/path boundaries and bounded safe previews |
-| tests/onboarding.test.mjs | Project environment isolation, offline inspect, diagnostics and installed templates |
-| tests/task-inputs.test.mjs | Frozen per-task manifests, unrelated-upload regression, path validation and CLI bindings |
-| tests/skills-policy.test.mjs | Available/used Skill fingerprints, exact-source reads and Python mode policy |
-| tests/session-compatibility.test.mjs | Removed/changed tool schemas preserve stored evidence with actionable errors |
-| tests/context-example.test.mjs | Native context policy and typed Python argument/cancellation examples |
-| tests/tui.test.mjs | Official terminal UI through the shared authenticated session path |
-| tests/browser.spec.ts | Compiled browser interaction checks |
-| examples/sequence-summary/ | FASTA source-preserving analysis, Skill, checker and Python driver |
-| examples/table-quality/ | CSV source-preserving profile, Skill, checker and Python driver |
-| examples/advanced/ | Native delegation and explicit two-Agent workflow |
+| `src/index.ts` | Public exports |
+| `src/types.ts` | Config, session, run, check and turn types |
+| `src/errors.ts` | Error classes (map to HTTP status) and credential redaction |
+| `config/load.ts` | `defineAgent` validation, `limitsOf`, `.env` loading, config import, instructions |
+| `config/models.ts` | `modelFromEnv`, `modelInfo`, `modelChoices`, `selectModel`, usage and cost arithmetic |
+| `agent/create.ts` | `createAgent`: the public facade |
+| `agent/resources.ts` | Builds workspace, Skills, MCP, tools and the native `ToolLoopAgent` (approval, retries, tool-name repair, budget stop, steering and bounding in `prepareStep`) |
+| `agent/gate.ts` | One operation at a time: starting → running → released; cancel and close |
+| `agent/turn.ts` | Accept a turn (`streamTurn`), continue one after approval (`respondTurn`), queue steering (`steerTurn`), start segments |
+| `agent/finish.ts` | Per segment: persist, settle tools; then pause, follow up, or record the run, check, repair, release |
+| `agent/prompt.ts` | System rules, task delivery note, bounded context projection |
+| `agent/recovery.ts` | Mark interrupted work after a crash (paused approvals are left alone) |
+| `agent/approval.ts` | Approval matcher, pending calls, applying decisions to stored parts |
+| `agent/steering.ts` | Steering queue: prepareStep injection, `data-steer` announcements, splitting into user messages |
+| `agent/compact.ts` | When to summarize, writing `session.summary`, the summarized model view |
+| `agent/subagent.ts` | `runSubagent`: helper tool sets and a native `ToolLoopAgent` per call |
+| `agent/steps.ts` | `StepRecord`s and usage/cost totals for runs and sessions |
+| `agent/eval.ts` | `loadEvalFile`, `runEvals`: run cases and grade them with the checker |
+| `agent/mcp.ts` | List, test, add and remove project HTTP MCP servers; hot-swap the tool set |
+| `tools/index.ts` | Assemble and name-check the tool set |
+| `tools/guard.ts` | Cancel-signal merging, output bounds, in-flight tracking |
+| `tools/builtin.ts` | `readFile`, `writeFile`, `listFiles`, `loadSkill`, `updatePlan`, `readToolOutput` |
+| `tools/search.ts` | `findFiles` and `searchFiles`: recursive walks through the Workspace policy |
+| `tools/memory.ts` | `saveMemory`, `readMemory`, `forgetMemory`, memory rules and the per-turn index note |
+| `tools/python.ts` | `runPython` and mode policy |
+| `tools/skills.ts` | Skill discovery, verified loading, fingerprints |
+| `tools/mcp.ts` | MCP connections, tool namespacing, cleanup |
+| `tools/describe.ts` | Tool name/description/JSON schema listing |
+| `workspace/workspace.ts` | The model's file view: confinement, secret hiding, write policy |
+| `workspace/context.ts` | Per-turn `ExecutionContext` (AsyncLocalStorage) |
+| `workspace/process.ts` | Shell-free subprocesses with bounded output and process-group kill |
+| `store/files.ts` | Symlink-free metadata paths, atomic writes, IDs, `ifExists` |
+| `store/hash.ts` | `sha256` and streaming `hashFile`, shared by Skills, uploads and provenance |
+| `store/lock.ts` | Cross-process project lock with dead-owner recovery |
+| `store/sessions.ts` | Session records |
+| `store/memory.ts` | `.lab-agent/memory/<name>.md` entries: parse, list, save, forget |
+| `store/mcp.ts` | `.lab-agent/mcp.json` and merging with config MCP |
+| `runs/store.ts` | Run records, artifact listing, check report schema |
+| `runs/provenance.ts` | Streaming SHA-256, input freezing, change detection |
+| `runs/check.ts` | Preflight → checker → final integrity; interrupted checks |
+| `server/http.ts` | Loopback Node server and response streaming |
+| `server/routes.ts` | Origin/token guard, API route table, static assets |
+| `server/files.ts` | Uploads, artifact access, bounded previews |
+| `cli/main.ts` | `lab-agent` command table, including `approve` and `eval` |
+| `cli/doctor.ts` | `inspect` and `doctor` |
+| `cli/scaffold.ts`, `cli/create.ts` | Templates and `create-lab-agent` |
+| `templates/basic`, `templates/python` | Installable starters |
 
-## Request and persistence path
+Workbench (`apps/workbench`, Next.js static export, Tailwind CSS v4, shadcn-style components on Radix):
 
-The browser sends UI messages with only its newest user message accepted; Core reloads prior history from server storage. streamTurn opens a session/run, invokes the native Agent and consumes its UI stream. The UI receives a parallel stream. Task completion records artifacts and runs the configured checker. Session history is persisted for CLI/browser reuse. A broken browser connection does not own task cancellation. Explicit cancel aborts both the model and registered subprocess work.
+| Path | Responsibility |
+| --- | --- |
+| `app/workbench.tsx` | Bootstrap token, poll state, select sessions, three-pane shell and top bar |
+| `app/globals.css` | Neutral design tokens; `ui.accent` sets `--brand`, used only for primary buttons and the focus ring |
+| `components/brand.tsx` | Monochrome monogram from `ui.title` (mobile header) |
+| `components/sidebar.tsx` | Sessions, project, input files, capabilities entry |
+| `components/conversation.tsx` | `useChat` transport (new turns and approval responses), history restore, cancel, steering, plan panel, compaction |
+| `components/composer.tsx` | Message box, Task/Chat switch, model picker, context meter with Compact, task input bindings, send-to-running-turn |
+| `components/message.tsx`, `markdown.tsx` | Messages, agent step timeline (tool calls, reasoning), Approve/Deny, plan checklist, helper answers, steering and repair notes, safe Markdown |
+| `components/run-panel.tsx`, `run-evidence.tsx`, `status.tsx` | Runs, Execute → Check → Deliver progress, model calls, cost, repairs, checks, outputs, provenance |
+| `components/capabilities.tsx`, `skills.tsx`, `memory.tsx`, `mcp-servers.tsx` | Models, limits and prices, expandable Skills, project memory (read, forget), tools and approval, helpers and compaction, MCP add/test/remove |
+| `components/artifact-preview.tsx`, `input-files.tsx` | Preview dialog and uploads |
+| `components/ui/*` | Button, Badge, Dialog primitives |
+| `lib/api.ts`, `lib/branding.ts` | Authenticated API calls; applying `ui` config |
 
-Execution status and delivery status are separate fields. Check results are independent observations, not model-generated status. Complete tool evidence is stored before future model input is projected and bounded. Project locks coordinate CLI and HTTP instances. A recover operation diagnoses dead ownership, records interruption and preserves evidence without replaying a tool call.
+Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-assistant`, `.message-repair`, `.tool-call`, `.tool-body`, `.tool-approval`, `.approval-actions`, `.plan-panel`, `.steer-note`, `.steer-status`, `.compaction-note`, `.memory-list`, `.model-calls`, `.session-usage`, `.task-inputs`, `.task-input-body`, `.chat-policy`, `.input-files`, `.capability-list`, `.skill-fingerprints`, `.connection-banner`.
 
-See [implementation contracts](CONTRACTS.md) for API route shapes and [Conventions](CONVENTIONS.md) for status and trust boundaries.
+## Invariants
+
+- Full history on disk; only the model's view is bounded. A summary replaces older turns in the view, never in history.
+- A paused approval is not terminal and never recovered as a crash; only the server's own pending calls can be answered.
+- All segments of a turn (approval continuation aside) share one lock, one timeout and one run.
+- Execution and delivery are separate fields; only a checker sets delivery.
+- Every accepted operation ends with a terminal record, including after a crash.
+- The lock is held until tool processes have settled, never released early on abort.
+- Tools are never replayed after recovery.
+- Model file tools, including search, never see secrets or Core metadata; memory is reached only through the memory tools. Host code is trusted, not sandboxed.
+
+## Tests
+
+| Path | Covers |
+| --- | --- |
+| `tests/fixtures/model-server.mjs` | Deterministic OpenAI-compatible HTTP model (labeled fixture) |
+| `tests/fixtures/mcp-server.mjs` | Real stdio MCP server |
+| `tests/resources.test.mjs`, `access.test.mjs` | Workspace policy, subprocesses, Skills, tools, MCP |
+| `tests/lifecycle.test.mjs`, `review.test.mjs` | Full turns, cancel, crash recovery, HTTP, concurrency |
+| `tests/delivery.test.mjs`, `provenance.test.mjs` | Checker outcomes, rechecks, tampering, legacy records |
+| `tests/task-inputs.test.mjs`, `skills-policy.test.mjs`, `session-compatibility.test.mjs` | Input freezing, Skill fingerprints, schema drift |
+| `tests/files.test.mjs` | Upload and preview boundaries |
+| `tests/workbench-features.test.mjs`, `fixtures/mcp-http-server.mjs` | Model choice, context metadata, Skill reading, project HTTP MCP |
+| `tests/memory-search.test.mjs` | `findFiles`/`searchFiles` policy and limits; memory save, index, provenance, routes, `memory: false`, helpers |
+| `tests/harness.test.mjs` | Approval, retries, tool-name repair, compaction, `readToolOutput`, repair loop, helpers, plan, steering, telemetry and budgets, evals, HTTP routes |
+| `tests/onboarding.test.mjs`, `consumers/installed.test.mjs` | Templates and the packed tarball outside the repo |
+| `tests/tui.test.mjs`, `browser.spec.ts` | Terminal UI and the workbench in Chromium |

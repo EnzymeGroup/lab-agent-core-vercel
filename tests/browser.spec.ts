@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -58,7 +58,7 @@ test('real task, authoritative history, artifact download, tamper detection and 
   await expect(page.getByRole('region', { name: 'Selected run details' })).toContainText('Passed');
   const pythonEvidence = page.locator('.tool-call').filter({ has: page.getByText('runPython', { exact: true }) }).locator('.tool-body');
   await expect(pythonEvidence).toContainText('summarize');
-  await expect(pythonEvidence).toContainText('OUTPUT');
+  await expect(pythonEvidence).toContainText('Output');
   await page.screenshot({ path: testInfo.outputPath('workbench-task-light.png'), fullPage: true });
 
   const download = page.waitForEvent('download');
@@ -176,7 +176,7 @@ test('input imports resolve in real tool calls and safe previews expose original
   await expect(inputs.getByRole('alert')).toContainText('File is too large');
   await inputs.getByLabel('Choose an input file').setInputFiles({ name: 'binary.txt', mimeType: 'text/plain', buffer: Buffer.from([1, 0, 2]) });
   await inputs.getByRole('button', { name: 'Import file', exact: true }).click();
-  await expect(inputs.getByRole('alert')).toContainText('Only text scientific inputs');
+  await expect(inputs.getByRole('alert')).toContainText('Only UTF-8 text files');
 
   const name = `browser-input-${Date.now()}.csv`;
   const content = 'sample,value\nalpha,42\nbeta,"a,b"\n';
@@ -409,6 +409,113 @@ test('incompatible legacy tool history shows recovery guidance without rewriting
   expect(await readFile(sessionFile, 'utf8')).toBe(baseline);
   expect((await readState(request)).runs).toHaveLength(state.runs.length);
   await expect(page.locator('.message-user')).toHaveCount(1);
+});
+
+test('model picker, context meter, Skill text and HTTP MCP add/test/remove', async ({ page, request }) => {
+  const { startMcpHttpServer } = await import('./fixtures/mcp-http-server.mjs');
+  const mcp = await startMcpHttpServer({ token: 'browser-mcp-token' });
+  try {
+    const sent: Array<{ model?: string }> = [];
+    page.on('request', message => { if (message.url().endsWith('/api/chat') && message.method() === 'POST') sent.push(message.postDataJSON()); });
+    await createSession(page);
+
+    // Model: choose the second fixture model, send, and the session keeps it.
+    await page.getByLabel('Model').selectOption('strong');
+    await page.getByRole('radio', { name: 'Chat', exact: true }).check();
+    await page.getByRole('textbox', { name: 'Message to agent' }).fill('[chat-only] which model?');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(page.locator('.message-assistant')).toContainText('Deterministic demo finished.');
+    await waitIdle(request);
+    expect(sent.at(-1)?.model).toBe('strong');
+    await expect(page.locator('.model-label')).toContainText('deterministic-strong');
+    await expect(page.locator('.context-meter')).toContainText(/Context \d+%/);
+
+    // Skill: open from the sidebar shortcut and expand the full SKILL.md.
+    await page.getByRole('button', { name: /^Open Skills/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Project capabilities' });
+    const skills = dialog.getByRole('region', { name: 'Skills' });
+    await skills.getByText('sequence-summary', { exact: true }).click();
+    await expect(skills).toContainText('registered summarize Python tool');
+    await expect(dialog.getByRole('region', { name: 'Models and limits' })).toContainText('deterministic-strong');
+
+    // MCP: a failed test, a passing test, add, then remove.
+    const servers = dialog.getByRole('region', { name: 'MCP servers' });
+    await servers.getByLabel('Server name').fill('remote');
+    await servers.getByLabel('Server URL').fill(mcp.url);
+    await servers.getByRole('button', { name: 'Test connection' }).click();
+    await expect(servers.getByRole('status')).toContainText('unavailable');
+    await servers.getByLabel('Request headers').fill('Authorization: Bearer browser-mcp-token');
+    await servers.getByRole('button', { name: 'Test connection' }).click();
+    await expect(servers.getByRole('status')).toContainText('mcp_remote_echo');
+    await servers.getByRole('button', { name: 'Add server' }).click();
+    await expect(servers.locator('.capability-list')).toContainText('connected');
+    await expect(servers.locator('.capability-list')).toContainText('Authorization (values hidden)');
+    const state = await request.get('/api/state', { headers: await authorized(request) }).then(response => response.json());
+    expect(state.tools).toContain('mcp_remote_echo');
+    expect(JSON.stringify(state)).not.toContain('browser-mcp-token');
+    await servers.getByRole('button', { name: 'Remove MCP server remote' }).click();
+    await expect(servers).toContainText('No MCP servers configured.');
+  } finally {
+    await mcp.close();
+  }
+});
+
+test('approval cards approve and deny a tool call; a running turn accepts steering', async ({ page, request }) => {
+  await createSession(page);
+  await page.getByRole('radio', { name: 'Chat', exact: true }).check();
+  const box = page.getByRole('textbox', { name: 'Message to agent' });
+
+  // Approve: the turn pauses, the composer waits, then the same message continues.
+  await box.fill('[tool:recordNote] note it');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Waiting for your approval.')).toBeVisible();
+  await expect(box).toBeDisabled();
+  await page.getByRole('button', { name: 'Approve recordNote' }).click();
+  await expect(page.locator('.message-assistant')).toContainText('Deterministic demo finished.');
+  await expect(page.locator('.tool-call').filter({ hasText: 'recordNote' }).first()).toContainText('Done');
+  await waitIdle(request);
+  expect((await readState(request)).sessions[0].state).toBe('idle');
+
+  // Deny: the tool never runs and the denial is shown.
+  await box.fill('[tool:recordNote] again');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.getByRole('button', { name: 'Deny recordNote' }).click();
+  await expect(page.locator('.tool-call').filter({ hasText: 'Denied' })).toContainText('Tool execution was denied');
+  await waitIdle(request);
+
+  // Steering: while a turn runs here, the composer queues a note for its next step.
+  await box.fill('[wait] [chat-only] hold on');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Send to running turn' })).toBeVisible();
+  await box.fill('also mention the data folder');
+  await page.getByRole('button', { name: 'Send to running turn' }).click();
+  await expect(page.locator('.steer-status')).toContainText('Sent.');
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await waitIdle(request);
+
+  // Capabilities list the approval rule and the helper.
+  await page.getByRole('button', { name: /^Open Tools/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Project capabilities' });
+  await expect(dialog.locator('li').filter({ hasText: 'recordNote' })).toContainText('Needs approval');
+  await expect(dialog.getByRole('region', { name: 'Helpers and context' })).toContainText('scout');
+});
+
+test('project memory entries can be read and forgotten in capabilities', async ({ page, request }) => {
+  const { project } = await readState(request);
+  const file = join(project, '.lab-agent/memory/output-format.md');
+  await mkdir(join(project, '.lab-agent/memory'), { recursive: true, mode: 0o700 });
+  await writeFile(file, '---\nname: output-format\ndescription: Deliver tables as TSV\ntype: feedback\nupdatedAt: 2026-01-01T00:00:00.000Z\n---\nWrite tables as **TSV**.\n');
+  await page.goto('/');
+  await expect(page.getByText('Demo fixture · no live model')).toBeVisible();
+  await page.getByRole('button', { name: /Capabilities/ }).click();
+  const memory = page.getByRole('dialog', { name: 'Project capabilities' }).getByRole('region', { name: 'Project memory' });
+  const entry = memory.locator('.memory-list > li').filter({ hasText: 'output-format' });
+  await expect(entry).toContainText('Deliver tables as TSV');
+  await entry.getByText('output-format', { exact: true }).click();
+  await expect(entry.locator('strong', { hasText: 'TSV' })).toBeVisible();
+  await entry.getByRole('button', { name: 'Forget memory output-format' }).click();
+  await expect(memory).toContainText('No memories yet');
+  await expect(readFile(file)).rejects.toThrow();
 });
 
 for (const width of [375, 768, 1024, 1440]) {

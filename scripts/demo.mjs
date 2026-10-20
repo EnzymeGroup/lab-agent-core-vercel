@@ -1,6 +1,8 @@
 import { cp, mkdir, access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tool } from 'ai';
+import { z } from 'zod';
 import { createAgent, loadAgentConfig, createHttpServer, modelFromEnv } from 'lab-agent-core-vercel';
 import { startModelServer } from '../tests/fixtures/model-server.mjs';
 
@@ -25,8 +27,21 @@ Object.assign(process.env, fixtureEnv);
 let agent;
 let server;
 try {
-  agent = await createAgent({ ...await loadAgentConfig(project), model: modelFromEnv(fixtureEnv) });
-  server = await createHttpServer(agent, { port, assets: path.join(repository, 'packages/core/workbench'), demo: true });
+  // Demo-only extras so the workbench shows every harness feature: a second fixture model
+  // (model picker), a tool that needs approval, a helper agent and example prices.
+  const config = await loadAgentConfig(project);
+  const recordNote = tool({
+    description: 'Record a short note (demo tool that needs approval).',
+    inputSchema: z.object({ note: z.string() }),
+    execute: async ({ note }) => ({ recorded: note }),
+  });
+  agent = await createAgent({
+    ...config, model: modelFromEnv(fixtureEnv), models: { strong: modelFromEnv({ ...fixtureEnv, LAB_AGENT_MODEL: 'deterministic-strong' }) },
+    tools: { ...config.tools, recordNote }, approval: ['recordNote'],
+    subagents: { scout: { description: 'Looks through project files and reports what it finds.', instructions: 'List and read project files. Report briefly.', tools: ['listFiles', 'readFile'] } },
+    pricing: { default: { input: 0.5, output: 1.5 }, strong: { input: 3, output: 15 } },
+  });
+  server = await createHttpServer(agent, { port, browserOrigin: value('--browser-origin'), assets: path.join(repository, 'packages/core/workbench'), demo: true });
 } catch (error) {
   await agent?.close();
   await model.close();

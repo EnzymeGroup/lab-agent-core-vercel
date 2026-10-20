@@ -95,7 +95,7 @@ test('checker report ceiling counts UTF-8 bytes before accepting a valid JSON re
 
 test('stale lock reclamation cannot unlink another contender’s newly acquired lock', async t => {
   const { config } = await setup(t);
-  const moduleURL = new URL('../packages/core/dist/storage.js', import.meta.url).href;
+  const moduleURL = new URL('../packages/core/dist/index.js', import.meta.url).href;
   // Pause only one real unlink to deterministically exercise a valid concurrent
   // schedule. A second acquisition still runs the actual filesystem algorithm.
   const script = `

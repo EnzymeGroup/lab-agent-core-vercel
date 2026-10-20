@@ -10,6 +10,7 @@ playwright-report/
 .env.local
 .lab-agent/
 runs/
+!packages/core/src/runs/
 *.tgz
 *.tsbuildinfo
 __pycache__/

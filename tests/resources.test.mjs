@@ -7,12 +7,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
-import { modelFromEnv, modelInfo } from '../packages/core/dist/models.js';
-import { runCommand } from '../packages/core/dist/process.js';
-import { createWorkspace, getExecutionContext, runWithExecutionContext } from '../packages/core/dist/workspace.js';
-import { discoverSkills, loadSkill } from '../packages/core/dist/skills.js';
-import { connectMcp } from '../packages/core/dist/mcp.js';
-import { createTools } from '../packages/core/dist/tools.js';
+import { modelFromEnv, modelInfo } from '../packages/core/dist/index.js';
+import { runCommand } from '../packages/core/dist/index.js';
+import { createWorkspace, getExecutionContext, runWithExecutionContext } from '../packages/core/dist/index.js';
+import { discoverSkills, loadSkill } from '../packages/core/dist/index.js';
+import { connectMcp } from '../packages/core/dist/index.js';
+import { createTools } from '../packages/core/dist/index.js';
 
 const options = { toolCallId: 'test-call', messages: [], context: {} };
 const configFor = (root, extra = {}) => ({ root, model: 'openai:test-model', ...extra });

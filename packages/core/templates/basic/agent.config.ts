@@ -17,4 +17,13 @@ export default defineAgent(({ root, env }) => ({
     }),
   },
   // No checker is configured: completed execution has delivery not_checked.
+  // Workbench branding. Presentation only; never part of run provenance.
+  ui: {
+    title: 'My Agent',
+    tagline: 'A native-tool agent with persistent sessions and tracked task runs.',
+    starters: [
+      { title: 'Count the notes', prompt: 'Read data/notes.txt and count its characters with countText.' },
+      { title: 'What can you do?', prompt: 'List your tools and Skills and when you would use each.', mode: 'chat' },
+    ],
+  },
 }));

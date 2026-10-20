@@ -1,6 +1,20 @@
-import type { CheckReport, RunRecord, SessionRecord, Skill } from '../../../packages/core/src/types';
+import type { CheckReport, ModelPrice, PendingApproval, RunRecord, SessionRecord, Skill, TurnMetadata, UiConfig } from '../../../packages/core/src/types';
 
-export type { CheckReport, RunRecord, SessionRecord };
+export type { CheckReport, PendingApproval, RunRecord, SessionRecord, Skill, TurnMetadata, UiConfig };
+export interface Subagent { name: string; description: string; model: string; maxSteps: number; tools: string[] }
+export interface ModelChoice { key: string; provider: string; id: string; default: boolean }
+export interface McpServer {
+  name: string;
+  transport: string;
+  optional: boolean;
+  status: 'configured' | 'connected' | 'unavailable';
+  error?: string;
+  tools?: string[];
+  source?: 'config' | 'project';
+  url?: string;
+  headerNames?: string[];
+}
+export interface McpTestResult extends Omit<McpServer, 'tools'> { tools: Array<{ name: string; description: string }> }
 export type SessionSummary = Omit<SessionRecord, 'messages'>;
 export interface UploadedFile {
   path: string;
@@ -23,20 +37,29 @@ export interface ArtifactPreview {
   rows?: string[][];
   mediaType?: string;
 }
+export interface MemoryEntry { name: string; description: string; type: 'user' | 'feedback' | 'project' | 'reference'; updatedAt: string }
 export interface AgentState {
   project: string;
   busy: boolean;
   active?: { sessionId: string; runId?: string; mode: 'chat' | 'task'; startedAt: string };
   model: { provider: string; id: string };
+  models?: ModelChoice[];
+  limits?: { maxSteps: number; timeoutMs: number; maxContextChars: number; maxRetries?: number; maxContextTokens?: number; maxTurnTokens?: number };
+  approval?: string[];
+  subagents?: Subagent[];
+  pricing?: Record<string, ModelPrice>;
+  compaction?: { at: number; keepTurns: number; model?: string } | false;
+  memory?: MemoryEntry[] | false;
   skills: Skill[];
   tools: string[];
-  toolDetails?: Array<{ name: string; description: string; inputSchema: unknown }>;
+  toolDetails?: Array<{ name: string; description: string; inputSchema: unknown; needsApproval?: boolean }>;
   pythonScripts?: Array<{ name: string; description: string; modes: Array<'chat' | 'task'> }>;
-  mcp?: Array<{ name: string; transport: string; optional: boolean; status: 'connected' | 'unavailable'; error?: string }>;
+  mcp?: McpServer[];
   fileAccess?: { mode?: 'analysis' | 'development'; readRoots?: string[]; writeRoots?: string[] };
   sessions: SessionSummary[];
   runs: RunRecord[];
   issues: string[];
+  ui?: UiConfig;
   demo: boolean;
 }
 
@@ -47,6 +70,14 @@ export async function api<T>(token: string, path: string, init: RequestInit = {}
   const response = await fetch(path, { ...init, headers, cache: 'no-store' });
   if (!response.ok) throw new Error(await responseError(response));
   return response.json() as Promise<T>;
+}
+
+/** Download a run artifact's raw bytes through the authenticated API. */
+export async function fetchArtifact(token: string, runId: string, path: string, signal?: AbortSignal): Promise<Blob> {
+  const query = `runId=${encodeURIComponent(runId)}&path=${encodeURIComponent(path)}`;
+  const response = await fetch(`/api/artifact?${query}`, { headers: { Authorization: `Bearer ${token}` }, signal, cache: 'no-store' });
+  if (!response.ok) throw new Error(await responseError(response));
+  return response.blob();
 }
 
 export async function responseError(response: Response): Promise<string> {
@@ -71,6 +102,11 @@ export function formatDate(date: string): string {
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   return bytes < 1_048_576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1_048_576).toFixed(1)} MiB`;
+}
+
+/** USD with enough precision for small per-call costs. */
+export function formatCost(usd: number): string {
+  return usd >= 1 ? `$${usd.toFixed(2)}` : usd >= 0.01 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(4)}`;
 }
 
 export function duration(startedAt: string, finishedAt?: string): string {

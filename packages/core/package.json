@@ -1,7 +1,7 @@
 {
   "name": "lab-agent-core-vercel",
   "version": "0.1.0-rc.3",
-  "description": "Composable scientific Agents with AI SDK, persistent sessions, Python tools and independent delivery checks",
+  "description": "A unified AI SDK agent base: persistent sessions, native tools, Skills, MCP, Python, independent delivery checks and a local workbench",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -14,8 +14,8 @@
     }
   },
   "bin": {
-    "lab-agent": "dist/cli.js",
-    "create-lab-agent": "dist/create.js"
+    "lab-agent": "dist/cli/main.js",
+    "create-lab-agent": "dist/cli/create.js"
   },
   "files": [
     "dist",

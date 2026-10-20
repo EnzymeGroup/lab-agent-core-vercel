@@ -11,9 +11,9 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { createAgent, createRunStore, checkRun } from '../packages/core/dist/index.js';
-import { checkRunUnlocked } from '../packages/core/dist/delivery.js';
-import { acquireOperation } from '../packages/core/dist/storage.js';
-import { hashArtifacts } from '../packages/core/dist/provenance.js';
+import { checkRunUnlocked } from '../packages/core/dist/runs/check.js';
+import { acquireOperation } from '../packages/core/dist/store/lock.js';
+import { hashArtifacts } from '../packages/core/dist/runs/provenance.js';
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));

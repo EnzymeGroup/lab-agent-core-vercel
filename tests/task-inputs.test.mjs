@@ -106,7 +106,7 @@ test('installed CLI shape accepts repeatable --input and passes an explicit froz
   const source = await readFile(configFile, 'utf8');
   await writeFile(configFile, source.replace("'lab-agent-core-vercel'", JSON.stringify(entry)));
   await writeFile(path.join(root, 'data/notes.txt'), 'Fixed unit policy');
-  const result = await runCommand(process.execPath, [fileURLToPath(new URL('../packages/core/dist/cli.js', import.meta.url)), 'run', 'Summarize source FASTA.', '--root', root, '--input', 'data/input.fasta', '--input', 'data/notes.txt', '--json'], {
+  const result = await runCommand(process.execPath, [fileURLToPath(new URL('../packages/core/dist/cli/main.js', import.meta.url)), 'run', 'Summarize source FASTA.', '--root', root, '--input', 'data/input.fasta', '--input', 'data/notes.txt', '--json'], {
     cwd: root, env: { LAB_AGENT_MODEL: 'input-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url }, timeoutMs: 15_000,
   });
   assert.equal(result.code, 0, result.stderr || result.stdout);

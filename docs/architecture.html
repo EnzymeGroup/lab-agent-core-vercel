@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab-agent-core-vercel · Architecture</title>
+<style>
+  :root { --bg:#f8fafc; --card:#fff; --fg:#0f172a; --muted:#475569; --line:#e2e8f0; --brand:#4f46e5; --brand-soft:#eef2ff; --ok:#047857; --warn:#b45309; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b1020; --card:#121a2e; --fg:#e2e8f0; --muted:#94a3b8; --line:#24304a; --brand:#a5b4fc; --brand-soft:#1e2550; --ok:#6ee7b7; --warn:#fcd34d; --bad:#fca5a5; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1040px; margin:0 auto; padding:40px 20px 80px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:48px 0 12px; } h3 { font-size:15px; margin:0 0 6px; }
+  p.lead { color:var(--muted); margin:0 0 20px; max-width:760px; }
+  code { font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--brand-soft); padding:1px 5px; border-radius:4px; }
+  nav { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 0; } nav a { color:var(--brand); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; font-size:13px; }
+  nav a:focus-visible, a:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .grid { display:grid; gap:12px; } .g2 { grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); } .g3 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+  .muted { color:var(--muted); font-size:13px; }
+  .layer { display:grid; grid-template-columns:150px 1fr; gap:16px; align-items:start; border-left:4px solid var(--brand); }
+  .layer + .layer { margin-top:8px; }
+  .layer .name { font-weight:600; font-family:ui-monospace,Menlo,monospace; }
+  .layer ul { margin:0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:6px; }
+  .arrow { text-align:center; color:var(--muted); font-size:13px; margin:4px 0; }
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .flow .card { padding:10px 14px; } .flow .to { color:var(--muted); }
+  ol.steps { counter-reset:s; list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+  ol.steps li { counter-increment:s; position:relative; padding-left:44px; }
+  ol.steps li::before { content:counter(s); position:absolute; left:0; top:14px; width:28px; height:28px; border-radius:50%; background:var(--brand); color:var(--card); font-weight:700; display:grid; place-items:center; font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; } th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; }
+  .pill { display:inline-block; font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; border:1px solid currentColor; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  pre { margin:0; overflow-x:auto; font:13px/1.55 ui-monospace,Menlo,monospace; }
+  footer { margin-top:56px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Architecture</h1>
+  <p class="lead">The AI SDK owns the model/tool loop and the message protocol. Core is a thin execution and delivery layer around it: sessions, runs, checks, file boundaries and one loopback HTTP server. Every entry point calls the same <code>streamTurn</code>.</p>
+  <nav aria-label="Sections">
+    <a href="#entry">Entry points</a><a href="#layers">Layers</a><a href="#turn">Life of a turn</a><a href="#status">Status model</a><a href="#storage">Storage</a><a href="#safety">Boundaries</a><a href="#invariants">Invariants</a>
+  </nav>
+</header>
+
+<section id="entry" aria-labelledby="entry-h">
+  <h2 id="entry-h">Entry points</h2>
+  <div class="flow" role="list">
+    <div class="card" role="listitem"><h3>lab-agent CLI / TUI</h3><span class="muted">cli/main.ts</span></div>
+    <div class="card" role="listitem"><h3>Workbench (Next.js static)</h3><span class="muted">server/http.ts · routes.ts</span></div>
+    <div class="card" role="listitem"><h3>Your code</h3><span class="muted">createAgent(config)</span></div>
+    <span class="to" aria-hidden="true">→</span>
+    <div class="card" role="listitem"><h3>streamTurn · respondTurn · steerTurn</h3><span class="muted">agent/turn.ts</span></div>
+    <span class="to" aria-hidden="true">→</span>
+    <div class="card" role="listitem"><h3>AI SDK ToolLoopAgent</h3><span class="muted">native stream, native tools</span></div>
+  </div>
+  <p class="muted">The TUI talks to the same local HTTP API as the browser. <code>agent.native</code> exposes the raw <code>ToolLoopAgent</code> and bypasses sessions, locks, runs and checks.</p>
+</section>
+
+<section id="layers" aria-labelledby="layers-h">
+  <h2 id="layers-h">Layers</h2>
+  <p class="muted">Imports point only downward. Each layer can be read and tested without the ones above it. Paths are under <code>packages/core/src/</code>.</p>
+  <div class="card layer"><div class="name">cli/ server/</div><ul><li><code>main.ts</code> command table</li><li><code>doctor.ts</code> inspect, doctor</li><li><code>scaffold.ts</code> templates</li><li><code>http.ts</code> loopback server</li><li><code>routes.ts</code> origin/token guard, API</li><li><code>files.ts</code> uploads, previews</li></ul></div>
+  <div class="arrow" aria-hidden="true">↓</div>
+  <div class="card layer"><div class="name">agent/</div><ul><li><code>create.ts</code> public facade</li><li><code>resources.ts</code> assemble once</li><li><code>gate.ts</code> one operation</li><li><code>turn.ts</code> accept + stream</li><li><code>finish.ts</code> persist, settle, record</li><li><code>prompt.ts</code> rules, bounded context</li><li><code>recovery.ts</code> crash leftovers</li><li><code>mcp.ts</code> add/test/remove HTTP MCP, hot-swap tools</li><li><code>approval.ts</code> pending calls, decisions</li><li><code>steering.ts</code> mid-turn messages</li><li><code>compact.ts</code> session summary</li><li><code>subagent.ts</code> runSubagent helpers</li><li><code>steps.ts</code> model calls, usage, cost</li><li><code>eval.ts</code> graded eval runs</li></ul></div>
+  <div class="arrow" aria-hidden="true">↓</div>
+  <div class="grid g2">
+    <div class="card layer"><div class="name">tools/</div><ul><li><code>index.ts</code> assemble, name-check</li><li><code>guard.ts</code> signals, output bound, in-flight</li><li><code>builtin.ts</code> read/write/list/loadSkill, updatePlan, readToolOutput</li><li><code>search.ts</code> findFiles, searchFiles</li><li><code>memory.ts</code> save/read/forget memory, index note</li><li><code>python.ts</code> runPython</li><li><code>skills.ts</code> discover, verified load</li><li><code>mcp.ts</code> MCP clients</li></ul></div>
+    <div class="card layer"><div class="name">runs/</div><ul><li><code>store.ts</code> RunRecord schema</li><li><code>provenance.ts</code> freeze inputs, detect change</li><li><code>check.ts</code> preflight → checker → final</li></ul></div>
+  </div>
+  <div class="arrow" aria-hidden="true">↓</div>
+  <div class="card layer"><div class="name">config/</div><ul><li><code>load.ts</code> defineAgent, .env, jiti import</li><li><code>models.ts</code> modelFromEnv, modelInfo, usage and cost</li></ul></div>
+  <div class="arrow" aria-hidden="true">↓</div>
+  <div class="card layer"><div class="name">workspace/</div><ul><li><code>workspace.ts</code> model file view, policy</li><li><code>context.ts</code> per-turn AsyncLocalStorage</li><li><code>process.ts</code> argv subprocess, group kill</li></ul></div>
+  <div class="arrow" aria-hidden="true">↓</div>
+  <div class="card layer"><div class="name">store/</div><ul><li><code>files.ts</code> atomic JSON, safe paths, IDs</li><li><code>hash.ts</code> sha256, hashFile</li><li><code>lock.ts</code> cross-process lock</li><li><code>sessions.ts</code> session records</li><li><code>mcp.ts</code> project HTTP MCP list</li><li><code>memory.ts</code> project memory entries</li></ul></div>
+  <p class="muted">Shared at the root: <code>types.ts</code> (all record and config types), <code>errors.ts</code> (error classes mapped to HTTP status, credential redaction), <code>index.ts</code> (public exports).</p>
+</section>
+
+<section id="turn" aria-labelledby="turn-h">
+  <h2 id="turn-h">Life of a task turn</h2>
+  <ol class="steps">
+    <li class="card"><h3>Accept</h3><code>turn.ts</code> validates the request. <code>gate.ts</code> takes the in-process gate, then the cross-process project lock (<code>store/lock.ts</code>). A second operation gets <code>BusyError</code> (HTTP 409).</li>
+    <li class="card"><h3>Recover and open</h3>Crash leftovers are marked interrupted (<code>recovery.ts</code>, never replayed). The session is loaded, and its stored tool calls are validated against the current tool schemas.</li>
+    <li class="card"><h3>Freeze</h3>For a task, <code>runs/store.ts</code> creates <code>runs/&lt;id&gt;/</code> and <code>provenance.ts</code> hashes the selected inputs, config, scripts, checker files and every available <code>SKILL.md</code>.</li>
+    <li class="card"><h3>Stream</h3>The user message is saved. If the model's view would reach the compaction threshold, older turns become <code>session.summary</code> (<code>compact.ts</code>). The project memory index is attached to the latest user message, never stored. <code>ToolLoopAgent.stream()</code> starts with Core's bounded context projection (<code>prompt.ts</code>) inside an <code>ExecutionContext</code> that carries mode, signal, output directory, steering queue and token budget to tools.</li>
+    <li class="card"><h3>Split</h3>The UI stream is <code>tee()</code>'d. The browser gets a detachable copy; <code>finish.ts</code> consumes the other and saves history at most every 100 ms. Closing the tab never stops accepted work. Only cancel does.</li>
+    <li class="card"><h3>Settle</h3>When the stream ends, <code>finish.ts</code> waits for in-flight tool executions (<code>tools/guard.ts</code>). A call that needs approval pauses the run as <code>awaiting_approval</code> and releases the lock; <code>respondTurn</code> continues the same message later. Queued steering starts another stream on the same lock.</li>
+    <li class="card"><h3>Record</h3>Otherwise <code>finish.ts</code> writes the run's terminal <code>execution</code>, its model calls, usage and cost, and hashes the outputs.</li>
+    <li class="card"><h3>Check</h3>If execution completed, <code>check.ts</code> runs preflight (did inputs or code change?), the checker (argv, no shell, writes <code>AGENT_CHECK_FILE</code>), and a final rehash (did the checker modify files?). The result sets <code>delivery</code>. With <code>repairAttempts</code>, a failed or partial check sends the issues back to the agent and streams again.</li>
+    <li class="card"><h3>Release</h3>Session state returns to idle and the lock is released. A chat turn has no run: it skips freezing, the run record and the check.</li>
+  </ol>
+</section>
+
+<section id="status" aria-labelledby="status-h">
+  <h2 id="status-h">Status model</h2>
+  <p class="muted">Two independent fields. Only the checker sets delivery; a model saying "done" is never a passed check.</p>
+  <div class="grid g2">
+    <div class="card">
+      <table>
+        <caption class="muted" style="text-align:left">execution: did the loop finish?</caption>
+        <thead><tr><th scope="col">Value</th><th scope="col">Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill warn">running</span></td><td>Accepted, not finished</td></tr>
+          <tr><td><span class="pill warn">awaiting_approval</span></td><td>Paused on a tool call; not terminal, not recovered</td></tr>
+          <tr><td><span class="pill ok">completed</span></td><td>Loop ended with a final response</td></tr>
+          <tr><td><span class="pill bad">failed</span></td><td>Error, step or token budget, timeout, or crash (<code>interrupted</code>)</td></tr>
+          <tr><td><span class="pill bad">aborted</span></td><td>Explicit cancel or controlled shutdown</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <table>
+        <caption class="muted" style="text-align:left">delivery: did the checker accept it?</caption>
+        <thead><tr><th scope="col">Value</th><th scope="col">Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill">not_checked</span></td><td>No checker, or not finished</td></tr>
+          <tr><td><span class="pill ok">passed</span></td><td>Report <code>passed</code>, exit 0</td></tr>
+          <tr><td><span class="pill warn">partial</span></td><td>Report <code>partial</code></td></tr>
+          <tr><td><span class="pill bad">failed</span></td><td>Report failed, nonzero exit, bad report, changed provenance, or files modified during the check</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="storage" aria-labelledby="storage-h">
+  <h2 id="storage-h">Storage</h2>
+  <div class="grid g2">
+    <div class="card"><pre>.lab-agent/
+  sessions/&lt;id&gt;.json    full UIMessage history
+  operation.lock        { id, pid, host, startedAt }
+  uploads/&lt;uuid&gt;.json   upload records
+  mcp.json              project HTTP MCP servers
+  memory/&lt;name&gt;.md      project memory (one fact per file)
+  evals/&lt;time&gt;.json     eval reports
+data/uploads/           imported inputs, read-only</pre></div>
+    <div class="card"><pre>runs/&lt;id&gt;/
+  run.json              RunRecord (schemaVersion 2)
+  output/               deliverables; the only part
+                        the model can see
+  check.json            latest check (view)
+  validation.log        latest checker output (view)
+  checks/&lt;obs&gt;/         immutable per-check snapshot</pre></div>
+  </div>
+  <p class="muted">All records are written through a synced temp file and rename. Metadata paths never traverse symlinks. Unreadable records are reported as <code>issues</code> instead of hiding the rest.</p>
+</section>
+
+<section id="safety" aria-labelledby="safety-h">
+  <h2 id="safety-h">Boundaries</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Model file tools</h3>Paths are resolved lexically and through symlinks; both must stay in the project. Secrets, <code>.git</code>, <code>.lab-agent/</code> and run metadata are hidden. Hard links are refused. Writes need an active task and land in its <code>output/</code>.</div>
+    <div class="card"><h3>Trusted host code</h3>Config, registered Python, MCP servers and native tools run with your permissions and are not sandboxed. Python runs as argv with no shell, in its own process group so cancel stops the whole tree.</div>
+    <div class="card"><h3>Local server</h3>Binds 127.0.0.1 only. Foreign <code>Host</code>/<code>Origin</code> or cross-site fetches get 403. Every API route except bootstrap needs the per-process bearer token.</div>
+  </div>
+</section>
+
+<section id="invariants" aria-labelledby="inv-h">
+  <h2 id="inv-h">Invariants</h2>
+  <div class="card">
+    <ul>
+      <li>Full history on disk; only the model's view is bounded. A summary replaces older turns in the view, never in history.</li>
+      <li>A paused approval is not terminal; only the server's own pending calls can be answered.</li>
+      <li>Execution and delivery are separate fields; only a checker sets delivery.</li>
+      <li>Every accepted operation ends with a terminal record, including after a crash.</li>
+      <li>The lock is held until tool processes settle, never released early on abort.</li>
+      <li>Tools and checkers are never replayed after recovery.</li>
+      <li>Model file tools never see secrets or Core metadata.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>Text reference: <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · contracts: <a href="REFERENCE.md">REFERENCE.md</a> · how-to: <a href="GUIDE.md">GUIDE.md</a></footer>
+</main>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 This project implements scientific Agent assembly directly with AI SDK. Do not add Pi runtime dependencies, a custom model loop, a second message protocol, or a workflow scheduler.
 
-Read `docs/CONTRACTS.md` before changing cross-layer behavior and `docs/ARCHITECTURE.md` for source ownership. Core owns session/run lifecycle, cancellation, resource cleanup and checking; applications own domain tools and scientific acceptance.
+Read `docs/REFERENCE.md` before changing cross-layer behavior and `docs/ARCHITECTURE.md` for source ownership and invariants. Core owns session/run lifecycle, cancellation, resource cleanup and checking; applications own domain tools and scientific acceptance.
 
 Use native AI SDK tools and UIMessage types. Keep full durable history separate from bounded model context. Completed execution and accepted delivery are independent. Every accepted operation must leave an honest terminal record. Do not release operation ownership before tool processes settle.
 

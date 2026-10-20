@@ -32,7 +32,7 @@ test('passed and partial check reports are independent from execution, and CLI r
   assert.equal(partial.execution, 'completed'); assert.equal(partial.delivery, 'partial');
   const entry = pathToFileURL(fileURLToPath(new URL('../packages/core/dist/index.js', import.meta.url))).href;
   await writeFile(path.join(root, 'agent.config.ts'), `import{defineAgent,modelFromEnv}from${JSON.stringify(entry)};export default defineAgent({root:${JSON.stringify(root)},model:modelFromEnv({LAB_AGENT_MODEL:'fixture',LAB_AGENT_API_KEY:'fixture-only',LAB_AGENT_BASE_URL:${JSON.stringify(fixture.url)}}),validation:{command:[${JSON.stringify(process.execPath)},'checker.mjs']}});`);
-  const cli = fileURLToPath(new URL('../packages/core/dist/cli.js', import.meta.url));
+  const cli = fileURLToPath(new URL('../packages/core/dist/cli/main.js', import.meta.url));
   const result = await runCommand(process.execPath, [cli, 'check', run.id, '--root', root, '--json'], { cwd: root });
   assert.equal(result.code, 2); assert.equal(JSON.parse(result.stdout).delivery, 'partial'); assert.equal(fixture.requests.length, 0);
   assert.match(await readFile(path.join(run.directory, 'validation.log'), 'utf8'), new RegExp(run.id));
@@ -63,7 +63,7 @@ test('CLI recheck cancellation reaches its subprocess without initializing unava
   await checker('import{writeFileSync}from"node:fs";writeFileSync("checker.pid",String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000);');
   const entry = pathToFileURL(fileURLToPath(new URL('../packages/core/dist/index.js', import.meta.url))).href;
   await writeFile(path.join(root, 'agent.config.ts'), `import{defineAgent,modelFromEnv}from${JSON.stringify(entry)};export default defineAgent({root:${JSON.stringify(root)},model:modelFromEnv({LAB_AGENT_MODEL:'fixture',LAB_AGENT_API_KEY:'fixture-only',LAB_AGENT_BASE_URL:${JSON.stringify(fixture.url)}}),validation:{command:[${JSON.stringify(process.execPath)},'checker.mjs'],timeoutMs:10000},mcp:{unavailable:{transport:'http',url:'http://127.0.0.1:1/mcp'}}});`);
-  const cli = fileURLToPath(new URL('../packages/core/dist/cli.js', import.meta.url));
+  const cli = fileURLToPath(new URL('../packages/core/dist/cli/main.js', import.meta.url));
   const worker = spawn(process.execPath, [cli, 'check', run.id, '--root', root, '--json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = ''; let stderr = ''; let pid;
   worker.stdout.on('data', chunk => { stdout += chunk; }); worker.stderr.on('data', chunk => { stderr += chunk; });
