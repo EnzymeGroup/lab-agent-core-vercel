@@ -6,6 +6,7 @@ import { modelInfo } from '../config/models.js';
 import { ifExists, projectPath, storagePath, within } from '../store/files.js';
 import { hashFile, sha256 } from '../store/hash.js';
 import { runCommand } from '../workspace/process.js';
+import { isSensitiveName } from '../workspace/workspace.js';
 import type { AgentConfig, FileHash, RunProvenance } from '../types.js';
 
 /**
@@ -16,8 +17,6 @@ import type { AgentConfig, FileHash, RunProvenance } from '../types.js';
 const require = createRequire(import.meta.url);
 const MAX_INPUT_DECLARATIONS = 256;
 const MAX_INPUT_FILES = 4096;
-/** Never fingerprinted when walking an input directory. */
-const SKIPPED_INPUT_NAMES = new Set(['.git', '.lab-agent', '.ssh', '.aws', '.gnupg', '.direnv']);
 
 export function validInputList(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= MAX_INPUT_DECLARATIONS
@@ -34,7 +33,7 @@ async function enumerateInputs(root: string, declared: string[], optional: boole
     if (info.isSymbolicLink()) throw new Error(`Input symlinks cannot be fingerprinted: ${file}`);
     if (info.isDirectory()) {
       for (const name of (await readdir(path)).sort()) {
-        if (name.startsWith('.env') || SKIPPED_INPUT_NAMES.has(name) || /\.(pem|key|p12|pfx)$/iu.test(name)) continue;
+        if (isSensitiveName(name)) continue;
         await visit(relative(root, resolve(path, name)), false);
       }
     } else if (info.isFile()) {

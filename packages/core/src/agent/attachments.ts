@@ -13,9 +13,21 @@ import type { Workspace } from '../workspace/workspace.js';
  * Whether a model accepts images or PDFs depends on its provider.
  */
 
-export const ATTACHMENT_TYPES: Record<string, string> = {
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+const jpeg = (data: Buffer) => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+
+/**
+ * Binary formats Core accepts, by extension: media type and leading-byte signature.
+ * The one list for attachments, binary uploads and image previews.
+ */
+export const BINARY_FORMATS: Record<string, { mediaType: string; matches(data: Buffer): boolean }> = {
+  '.png': { mediaType: 'image/png', matches: data => data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  '.jpg': { mediaType: 'image/jpeg', matches: jpeg },
+  '.jpeg': { mediaType: 'image/jpeg', matches: jpeg },
+  '.gif': { mediaType: 'image/gif', matches: data => data.subarray(0, 4).toString('latin1') === 'GIF8' },
+  '.webp': { mediaType: 'image/webp', matches: data => data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP' },
+  '.pdf': { mediaType: 'application/pdf', matches: data => data.subarray(0, 5).toString('latin1') === '%PDF-' },
 };
+export const attachableExtensions = Object.keys(BINARY_FORMATS);
 export const MAX_ATTACHMENTS = 8;
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const SCHEME = 'project:';
@@ -30,8 +42,8 @@ export async function attachmentParts(workspace: Workspace, paths: unknown): Pro
   }
   const parts: FilePart[] = [];
   for (const path of new Set(paths as string[])) {
-    const mediaType = ATTACHMENT_TYPES[extname(path).toLowerCase()];
-    if (!mediaType) throw new InputError(`Attach images or PDFs only (${Object.keys(ATTACHMENT_TYPES).join(', ')}): ${path}`);
+    const mediaType = BINARY_FORMATS[extname(path).toLowerCase()]?.mediaType;
+    if (!mediaType) throw new InputError(`Attach images or PDFs only (${attachableExtensions.join(', ')}): ${path}`);
     let file: string;
     try {
       file = projectPath(workspace.root, await workspace.resolve(path));

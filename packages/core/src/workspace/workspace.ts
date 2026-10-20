@@ -60,7 +60,8 @@ const SENSITIVE_PATTERNS = [
   /(?:^|[-_.])service[-_]?account(?:$|[-_.])/u,
 ];
 
-function isSensitiveName(original: string): boolean {
+/** One path segment that file tools never see. Also used for input fingerprints and the extras shell sandbox. */
+export function isSensitiveName(original: string): boolean {
   const name = original.toLowerCase();
   return name.startsWith('.env') || SENSITIVE_NAMES.has(name) || SENSITIVE_PATTERNS.some(pattern => pattern.test(name));
 }

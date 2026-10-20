@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleAlert, Cpu, Layers, MessageSquare, Moon, PanelLeft, Plus, RefreshCw, Sun, WifiOff } from 'lucide-react';
-import { api, errorMessage, formatCost, type AgentState, type SessionRecord } from '../lib/api';
+import { api, errorMessage, formatCost, type AgentState, type DraftReference, type SessionRecord } from '../lib/api';
 import { applyBranding, DEFAULT_TITLE } from '../lib/branding';
 import { cn } from '../lib/utils';
 import Conversation from '../components/conversation';
@@ -52,7 +52,7 @@ export default function Workbench() {
   const [creating, setCreating] = useState(false);
   const [panel, setPanel] = useState<Panel>('conversation');
   const [capabilities, setCapabilities] = useState<{ section?: CapabilitySection }>();
-  const [draftReference, setDraftReference] = useState<{ id: string; text: string; path: string }>();
+  const [draftReference, setDraftReference] = useState<DraftReference>();
   const [theme, toggleTheme] = useTheme();
   const selection = useRef(0);
   const selectedId = useRef('');
@@ -161,9 +161,9 @@ export default function Workbench() {
     setPanel('conversation');
   }
 
-  async function useInput(path: string) {
+  async function useInput(path: string, attach: boolean) {
     if (!sessionId && !await newSession()) return;
-    setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}`, path });
+    setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}`, path, attach });
     setPanel('conversation');
   }
 
@@ -197,7 +197,7 @@ export default function Workbench() {
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)] desk:grid-cols-[256px_minmax(0,1fr)_340px] desk:grid-rows-[auto_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_400px]">
         <aside aria-label="Sessions" className={cn(pane('sessions'), 'row-start-3 bg-sidebar desk:col-start-1 desk:row-span-2 desk:row-start-1 desk:border-r')}>
           <Sidebar token={token} state={state} title={title} sessionId={sessionId} creating={creating} canCreate={canCreate}
-            onNewSession={() => { void newSession(); }} onSelectSession={selectSession} onUseInput={path => { void useInput(path); }} onShowCapabilities={section => setCapabilities({ section })} />
+            onNewSession={() => { void newSession(); }} onSelectSession={selectSession} onUseInput={(path, attach) => { void useInput(path, attach); }} onShowCapabilities={section => setCapabilities({ section })} />
         </aside>
 
         <header className="row-start-1 flex h-14 min-w-0 items-center gap-2 border-b bg-background px-3 desk:col-start-2 desk:px-5">

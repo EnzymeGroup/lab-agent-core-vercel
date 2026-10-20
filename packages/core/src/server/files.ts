@@ -6,6 +6,7 @@ import { InputError, NotFoundError } from '../errors.js';
 import { acquireOperation } from '../store/lock.js';
 import { atomicJSON, readDirectory, readJSON, storagePath, within } from '../store/files.js';
 import { sha256 } from '../store/hash.js';
+import { BINARY_FORMATS, MAX_ATTACHMENT_BYTES, attachableExtensions } from '../agent/attachments.js';
 import type { LabAgent } from '../agent/create.js';
 
 /**
@@ -13,22 +14,15 @@ import type { LabAgent } from '../agent/create.js';
  * Uploads are separate from model write permissions: unique, read-only, never overwritten.
  */
 
-export const uploadLimit = 10 * 1024 * 1024;
+// Uploaded images and PDFs are attached to messages, so an upload may be as large as an attachment.
+export const uploadLimit = MAX_ATTACHMENT_BYTES;
 const MAX_UPLOADS = 1000;
 const MAX_FILENAME_BYTES = 180;
 const PREVIEW_TEXT_BYTES = 256 * 1024;
 
 const SCIENCE_TEXT = ['.fasta', '.fa', '.fna', '.faa', '.pdb', '.cif'];
-/** Binary uploads, used as message attachments; checked by their leading bytes instead of UTF-8. */
-const BINARY_SIGNATURES: Record<string, (data: Buffer) => boolean> = {
-  '.png': data => data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-  '.jpg': data => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff,
-  '.jpeg': data => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff,
-  '.gif': data => data.subarray(0, 4).toString('latin1') === 'GIF8',
-  '.webp': data => data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP',
-  '.pdf': data => data.subarray(0, 5).toString('latin1') === '%PDF-',
-};
-export const uploadExtensions = ['.csv', '.tsv', '.json', '.txt', '.md', '.yaml', '.yml', '.log', ...SCIENCE_TEXT, ...Object.keys(BINARY_SIGNATURES)];
+// Binary uploads (images, PDFs) are checked by their leading bytes instead of UTF-8.
+export const uploadExtensions = ['.csv', '.tsv', '.json', '.txt', '.md', '.yaml', '.yml', '.log', ...SCIENCE_TEXT, ...attachableExtensions];
 const PREVIEW_TEXT = new Set(['.csv', '.tsv', '.json', '.md', '.txt', '.log', '.yaml', '.yml', ...SCIENCE_TEXT]);
 
 export interface ImportedFile { path: string; name: string; bytes: number; sha256: string; importedAt: string }
@@ -89,9 +83,9 @@ export async function importUpload(root: string, name: string, request: Request)
     }
     const data = await readBody(request, uploadLimit, 'Input upload exceeds 10 MiB.');
     if (!data.length) throw new InputError('Input file is empty.');
-    const signature = BINARY_SIGNATURES[extname(name).toLowerCase()];
-    if (signature) {
-      if (!signature(data)) throw new InputError(`${name} does not look like a ${extname(name).slice(1).toUpperCase()} file.`);
+    const format = BINARY_FORMATS[extname(name).toLowerCase()];
+    if (format) {
+      if (!format.matches(data)) throw new InputError(`${name} does not look like a ${extname(name).slice(1).toUpperCase()} file.`);
     } else {
       if (data.includes(0)) throw new InputError('Only UTF-8 text files can be imported.');
       try { new TextDecoder('utf-8', { fatal: true }).decode(data); } catch { throw new InputError('Only UTF-8 text files can be imported.'); }
@@ -150,7 +144,6 @@ export interface ArtifactPreview {
 const MAX_ROWS = 50;
 const MAX_COLUMNS = 30;
 const MAX_CELL_CHARS = 2000;
-const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 /** RFC 4180-style quoted fields, bounded to 50 rows × 30 columns × 2000 chars. */
 export function csvPreview(text: string, separator = ','): { rows: string[][]; truncated: boolean } {
@@ -187,12 +180,11 @@ export function csvPreview(text: string, separator = ','): { rows: string[][]; t
 
 async function previewImage(handle: Awaited<ReturnType<typeof open>>, extension: string, bytes: number) {
   if (bytes > uploadLimit) throw new InputError('Image preview exceeds 10 MiB. Download the artifact instead.');
-  const signature = Buffer.alloc(8);
-  await handle.read(signature, 0, 8, 0);
-  const png = signature.equals(PNG_SIGNATURE);
-  const jpeg = signature[0] === 255 && signature[1] === 216 && signature[2] === 255;
-  if (!(extension === '.png' ? png : jpeg)) throw new InputError('Image signature does not match its filename.');
-  return png ? 'image/png' : 'image/jpeg';
+  const signature = Buffer.alloc(16);
+  await handle.read(signature, 0, 16, 0);
+  const format = BINARY_FORMATS[extension];
+  if (!format.matches(signature)) throw new InputError('Image signature does not match its filename.');
+  return format.mediaType;
 }
 
 /** Bounded, escaped-on-render preview. Raw HTML and SVG are never previewed. */

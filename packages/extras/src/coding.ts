@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { createWorkspace, getExecutionContext, runCommand, type FileAccessPolicy, type Workspace } from 'lab-agent-core-vercel';
+import { getExecutionContext, isSensitiveName, runCommand, sha256, type FileAccessPolicy, type Workspace } from 'lab-agent-core-vercel';
+import { lazyWorkspace, serialQueue } from './shared.js';
 
 /**
  * Coding tools. Not part of Core's "trusted code only" model: shell runs commands the model
@@ -49,12 +50,11 @@ export interface CodingToolOptions {
 
 interface EditRecord { id: string; path: string; before: string | null; afterSha256: string; at: string; runId?: string }
 
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 // Edit ids sort in the order the edits were made, also within one millisecond.
 let sequence = 0;
 const editId = () => `${Date.now().toString(36).padStart(9, '0')}${(sequence++ % 1_679_616).toString(36).padStart(4, '0')}-${randomUUID().slice(0, 8)}`;
-const SENSITIVE_FILE = /^(?:\.env(?:$|[._-])|id_(?:rsa|dsa|ecdsa|ed25519)$|.*\.(?:pem|key|p12|pfx|jks|keystore)$|.*(?:credentials|secrets?)(?:\.[a-z]+)?$)/iu;
-const SENSITIVE_DIR = new Set(['.ssh', '.aws', '.gnupg', 'secrets', 'credentials', '.direnv']);
+// Not walked: dependencies, caches, and paths the sandbox already handles (.lab-agent hidden, runs read-only).
+// .git itself stays visible so the shell can run git; its credentials files are still matched by name.
 const SKIP_DIR = new Set(['node_modules', '.git', '.venv', 'venv', '__pycache__', '.lab-agent', 'runs']);
 
 const occurrences = (text: string, search: string) => {
@@ -93,9 +93,10 @@ async function sensitivePaths(root: string): Promise<{ files: string[]; dirs: st
       seen++;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (SENSITIVE_DIR.has(entry.name)) dirs.push(path);
-        else if (!SKIP_DIR.has(entry.name)) await visit(path, depth + 1);
-      } else if (entry.isFile() && SENSITIVE_FILE.test(entry.name)) {
+        if (SKIP_DIR.has(entry.name)) continue;
+        if (isSensitiveName(entry.name)) dirs.push(path);
+        else await visit(path, depth + 1);
+      } else if (entry.isFile() && isSensitiveName(entry.name)) {
         files.push(path);
       }
     }
@@ -105,16 +106,11 @@ async function sensitivePaths(root: string): Promise<{ files: string[]; dirs: st
 }
 
 export function codingTools(options: CodingToolOptions): ToolSet {
-  let workspace: Promise<Workspace> | undefined;
-  const files = () => workspace ??= createWorkspace(options.root, options.fileAccess);
+  const files = lazyWorkspace(options.root, options.fileAccess);
   const tools: ToolSet = {};
   // Tool calls of one step run concurrently; edits and undos run one at a time so none is lost.
-  let queue: Promise<unknown> = Promise.resolve();
-  const serial = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = queue.then(work);
-    queue = next.catch(() => {});
-    return next;
-  };
+  const queue = serialQueue();
+  const serial = <T>(work: () => Promise<T>) => queue('edits', work);
 
   // ─── Edits and undo ───────────────────────────────────────────────────────
 

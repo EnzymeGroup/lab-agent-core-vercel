@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { getExecutionContext, runCommand } from 'lab-agent-core-vercel';
+import { atomicJSON, getExecutionContext, runCommand, sha256 } from 'lab-agent-core-vercel';
 
 /**
  * Long-running jobs (Slurm, or local background processes) that outlive a turn.
@@ -204,12 +204,6 @@ const MAX_WAIT_SECONDS = 60;
 
 const within = (root: string, path: string) => path === root || path.startsWith(root + sep);
 
-async function atomicRecord(file: string, record: JobRecord): Promise<void> {
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, file);
-}
-
 async function tail(file: string, lines: number): Promise<{ text: string; truncated: boolean }> {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => undefined);
   if (!handle) return { text: '', truncated: false };
@@ -258,18 +252,18 @@ export function hpcTools(options: HpcToolOptions): ToolSet {
     return { root, jobs };
   };
 
-  const load = async (id: string): Promise<{ record: JobRecord; directory: string; file: string }> => {
+  const load = async (id: string): Promise<{ record: JobRecord; directory: string }> => {
     if (!JOB_ID.test(id)) throw new Error(`Invalid jobId: ${id}`);
     const { jobs } = await base();
     const directory = join(jobs, id);
     const file = join(directory, 'job.json');
     const text = await readFile(file, 'utf8').catch(() => { throw new Error(`No job ${id}.`); });
-    return { record: JSON.parse(text) as JobRecord, directory, file };
+    return { record: JSON.parse(text) as JobRecord, directory };
   };
 
   /** Ask the scheduler for a job that has not finished yet, and save any change. */
   const refresh = async (id: string, signal?: AbortSignal): Promise<JobRecord> => {
-    const { record, directory, file } = await load(id);
+    const { record, directory } = await load(id);
     if (TERMINAL.has(record.status)) return record;
     const next = await adapter.status(record, directory, signal);
     if (next.status === record.status && next.exitCode === record.exitCode && next.detail === record.detail) return record;
@@ -280,7 +274,7 @@ export function hpcTools(options: HpcToolOptions): ToolSet {
       ...(next.detail === undefined ? {} : { detail: next.detail }),
       ...(TERMINAL.has(next.status) ? { finishedAt: now } : {}),
     };
-    await atomicRecord(file, updated);
+    await atomicJSON((await base()).root, `${record.directory}/job.json`, updated);
     return updated;
   };
 
@@ -316,7 +310,7 @@ export function hpcTools(options: HpcToolOptions): ToolSet {
         const definition = options.jobs[job];
         const script = await realpath(resolve(root, definition.script));
         if (!within(root, script)) throw new Error(`jobs.${job}.script must be inside the project.`);
-        const sha256 = createHash('sha256').update(await readFile(script)).digest('hex');
+        const scriptHash = sha256(await readFile(script));
         const id = `${Date.now().toString(36).padStart(8, '0').slice(-8)}-${randomUUID().replace(/-/gu, '').slice(0, 6)}`;
         const directory = join(jobs, id);
         await mkdir(join(directory, 'output'), { recursive: true, mode: 0o700 });
@@ -330,9 +324,9 @@ export function hpcTools(options: HpcToolOptions): ToolSet {
         const record: JobRecord = {
           id, job, args, scheduler: adapter.name, schedulerId: submitted.schedulerId, status: submitted.status,
           submittedAt: now, updatedAt: now, directory: relative(root, directory).split(sep).join('/'),
-          script: { path: relative(root, script).split(sep).join('/'), sha256 }, ...(runId ? { runId } : {}),
+          script: { path: relative(root, script).split(sep).join('/'), sha256: scriptHash }, ...(runId ? { runId } : {}),
         };
-        await atomicRecord(join(directory, 'job.json'), record);
+        await atomicJSON(root, `${record.directory}/job.json`, record);
         return { ...await view(record), note: 'Submitted. The job runs in the background; check it with jobStatus.' };
       },
     }),

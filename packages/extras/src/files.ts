@@ -3,7 +3,8 @@ import { open } from 'node:fs/promises';
 import { constants as zlibConstants, createGunzip } from 'node:zlib';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { createWorkspace, type FileAccessPolicy, type Workspace } from 'lab-agent-core-vercel';
+import type { FileAccessPolicy, Workspace } from 'lab-agent-core-vercel';
+import { lazyWorkspace } from './shared.js';
 
 /**
  * inspectFile: a first look at large or binary project files (FASTQ, BAM, VCF, gzip …)
@@ -202,7 +203,7 @@ export async function inspect(workspace: Workspace, path: string, lines: number)
 }
 
 export function inspectTools(options: InspectToolOptions): ToolSet {
-  let workspace: Promise<Workspace> | undefined;
+  const workspace = lazyWorkspace(options.root, options.fileAccess);
   return {
     inspectFile: tool({
       description: 'First look at a project file of any size or type without loading it: size, compression (gzip, BGZF, …), detected format (FASTQ, FASTA, VCF, SAM, BAM header, GFF, BED, CSV/TSV, JSON, text or binary), the first lines and sample statistics (read lengths, GC%, samples, references). Reads at most the first MiB. Use it before readFile on large files.',
@@ -211,8 +212,7 @@ export function inspectTools(options: InspectToolOptions): ToolSet {
         lines: z.number().int().min(1).max(200).default(20).describe('Preview lines to return.'),
       }),
       async execute({ path, lines }) {
-        workspace ??= createWorkspace(options.root, options.fileAccess);
-        return inspect(await workspace, path, lines);
+        return inspect(await workspace(), path, lines);
       },
     }),
   };

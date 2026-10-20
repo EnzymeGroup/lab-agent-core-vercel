@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react';
 import { ArrowUp, ChevronRight, FlaskConical, MessageSquare, Paperclip, X } from 'lucide-react';
-import { formatCost, type ModelChoice, type SessionRecord, type TurnMetadata } from '../lib/api';
+import { formatCost, MAX_TASK_INPUTS, type ModelChoice, type SessionRecord, type TurnMetadata } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 
@@ -12,7 +12,6 @@ import { Button } from './ui/button';
  */
 
 export type Mode = 'chat' | 'task';
-const MAX_BINDINGS = 256;
 
 interface Props {
   sessionId: string;
@@ -105,8 +104,8 @@ function TaskInputs({ boundInputs, onChange, error, onError, blocked }: { boundI
       onError('Use a project-relative file or directory path without parent-directory segments.');
       return;
     }
-    if (boundInputs.length >= MAX_BINDINGS && !boundInputs.includes(value)) {
-      onError('A task can bind up to 256 input declarations. Remove one before adding another.');
+    if (boundInputs.length >= MAX_TASK_INPUTS && !boundInputs.includes(value)) {
+      onError(`A task can bind up to ${MAX_TASK_INPUTS} input declarations. Remove one before adding another.`);
       return;
     }
     onChange(previous => previous.includes(value) ? previous : [...previous, value]);

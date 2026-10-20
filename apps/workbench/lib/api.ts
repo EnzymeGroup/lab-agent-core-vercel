@@ -27,7 +27,14 @@ export interface UploadListing {
   files: UploadedFile[];
   maxBytes: number;
   extensions: string[];
+  /** Extensions that can be attached to a message (images, PDFs). */
+  attachable?: string[];
 }
+/** An imported file chosen in Input files: attach it to the next message, or bind it as a task input. */
+export interface DraftReference { id: string; text: string; path: string; attach: boolean }
+// Mirrors of server limits, for immediate feedback; the server still enforces them.
+export const MAX_TASK_INPUTS = 256;
+export const MAX_ATTACHMENTS = 8;
 export interface ArtifactPreview {
   kind: 'csv' | 'json' | 'markdown' | 'text' | 'image';
   path: string;

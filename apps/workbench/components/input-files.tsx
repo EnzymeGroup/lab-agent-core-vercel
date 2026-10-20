@@ -10,7 +10,7 @@ import { Button } from './ui/button';
  * a message; "Use for task" only inserts the path and binds it. Stable hook: .input-files.
  */
 
-export default function InputFiles({ token, busy, onUse }: { token: string; busy: boolean; onUse(path: string): void }) {
+export default function InputFiles({ token, busy, onUse }: { token: string; busy: boolean; onUse(path: string, attach: boolean): void }) {
   const [listing, setListing] = useState<UploadListing>();
   const [file, setFile] = useState<File>();
   const [error, setError] = useState('');
@@ -114,9 +114,9 @@ export default function InputFiles({ token, busy, onUse }: { token: string; busy
                 <code className="mt-1 block font-mono text-[11px] break-all text-muted-foreground" tabIndex={0}>{item.path}</code>
                 <div className="mt-2 flex gap-1.5">
                   <Button variant="outline" size="sm" className="h-7 flex-1" onClick={() => { void copy(item.path); }} aria-label={`Copy path for ${item.name}`}><Copy />Copy path</Button>
-                  {/\.(?:png|jpe?g|gif|webp|pdf)$/iu.test(item.path)
-                    ? <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Attach ${item.name} to the next message`}>Attach</Button>
-                    : <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Use ${item.name} in task`}>Use for task</Button>}
+                  {listing?.attachable?.some(extension => item.path.toLowerCase().endsWith(extension))
+                    ? <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path, true)} disabled={busy || importing} aria-label={`Attach ${item.name} to the next message`}>Attach</Button>
+                    : <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path, false)} disabled={busy || importing} aria-label={`Use ${item.name} in task`}>Use for task</Button>}
                 </div>
                 <details className="mt-2"><summary className="text-[11px] text-muted-foreground">SHA-256</summary><code className="mt-1 block font-mono text-[10px] break-all">{item.sha256}</code></details>
               </li>

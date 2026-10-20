@@ -66,7 +66,7 @@ export default defineAgent(({ root, env }) => config) // factory; env = project 
 
 Errors: `BusyError` (another operation owns the project), `InputError` (invalid request), `NotFoundError`, `RunError`, `SessionCompatibilityError` (stored tool calls no longer match current tools; history unchanged).
 
-Lower-level exports for custom tools: `getExecutionContext`, `runWithExecutionContext`, `runCommand`, `createWorkspace`, `createTools`, `loadSkill`, `listMemory`, `readMemory`, `saveMemory`, `forgetMemory`, `connectMcp`, `acquireOperation`, `checkRun`, `createHttpServer`.
+Lower-level exports for custom tools: `getExecutionContext`, `runWithExecutionContext`, `runCommand`, `createWorkspace`, `createTools`, `loadSkill`, `listMemory`, `readMemory`, `saveMemory`, `forgetMemory`, `connectMcp`, `acquireOperation`, `checkRun`, `createHttpServer`, and for packages built on Core: `isSensitiveName` (the file-policy name rule), `sha256`, `atomicJSON` (symlink-safe atomic write under the project root).
 
 ## CLI
 
@@ -113,7 +113,7 @@ For local port forwarding, set `createHttpServer(agent, { browserOrigin: 'http:/
 | `DELETE /api/mcp` | `?name` | `{ servers, issues }`. Project servers only |
 | `GET /api/run` | `?id` | `{ run, check }` |
 | `POST /api/check` | `{ runId }` | `RunRecord` |
-| `GET /api/uploads` | | `{ files, maxBytes, extensions }` |
+| `GET /api/uploads` | | `{ files, maxBytes, extensions, attachable }`. `attachable` lists the extensions that can be attached to a message |
 | `POST /api/uploads` | `?name=` + raw body | `{ path, name, bytes, sha256, importedAt }` (201) |
 | `GET /api/preview` | `?runId&path` | `{ kind, path, bytes, truncated, content?, rows?, mediaType? }` |
 | `GET /api/artifact` | `?runId&path` | file download |

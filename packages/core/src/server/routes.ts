@@ -8,6 +8,7 @@ import { BusyError, errorMessage, InputError, NotFoundError } from '../errors.js
 import { storagePath } from '../store/files.js';
 import { importUpload, listUploads, openArtifact, previewArtifact, readBody, uploadExtensions, uploadLimit } from './files.js';
 import { decisionsFromMessage } from '../agent/approval.js';
+import { attachableExtensions } from '../agent/attachments.js';
 import type { LabAgent } from '../agent/create.js';
 import type { TurnStream } from '../types.js';
 
@@ -116,7 +117,7 @@ function apiRoutes(agent: LabAgent, demo: boolean): Record<string, Route> {
       const { runId } = await parseBody(request, z.object({ runId: z.string() }));
       return json(await agent.runs.check(runId));
     },
-    'GET /api/uploads': async () => json({ files: await listUploads(agent.config.root), maxBytes: uploadLimit, extensions: uploadExtensions }),
+    'GET /api/uploads': async () => json({ files: await listUploads(agent.config.root), maxBytes: uploadLimit, extensions: uploadExtensions, attachable: attachableExtensions }),
     'POST /api/uploads': async (request, url) => json(await importUpload(agent.config.root, param(url, 'name'), request), 201),
     'GET /api/preview': async (_, url) => json(await previewArtifact(agent, param(url, 'runId'), param(url, 'path'))),
     'GET /api/artifact': async (_, url) => {

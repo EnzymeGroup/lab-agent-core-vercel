@@ -143,6 +143,11 @@ test('shell sandbox: project writable; system, home, secrets, .lab-agent and run
   await writeFile(path.join(root, '.lab-agent/sessions/s.json'), '{}');
   await mkdir(path.join(root, 'secrets'));
   await writeFile(path.join(root, 'secrets/key.txt'), 'k');
+  // Names only Core's rule used to cover; the sandbox now uses the same rule.
+  await writeFile(path.join(root, '.npmrc'), '//registry/:_authToken=npm-secret\n');
+  await writeFile(path.join(root, '.git-credentials'), 'https://user:pw@example.org\n');
+  await mkdir(path.join(root, 'keys'));
+  await writeFile(path.join(root, 'keys/deploy.txt'), 'k');
   process.env.PARENT_SECRET = 'leak';
   t.after(() => { delete process.env.PARENT_SECRET; });
   const tools = codingTools({ root, shell: {} });
@@ -156,6 +161,8 @@ test('shell sandbox: project writable; system, home, secrets, .lab-agent and run
   const secrets = await sh('echo "env=[$(cat .env)]"; echo overwrite > .env; echo "lab=$(ls -A .lab-agent | wc -l)"; echo "dir=$(ls -A secrets | wc -l)"; touch runs/x 2>/dev/null || echo runs-read-only; echo "var=[$PARENT_SECRET]"');
   assert.deepEqual(secrets.stdout.trim().split('\n'), ['env=[]', 'lab=0', 'dir=0', 'runs-read-only', 'var=[]']);
   assert.equal(await readFile(path.join(root, '.env'), 'utf8'), 'TOKEN=secret-value\n', 'the real file is untouched');
+  const more = await sh('echo "npmrc=[$(cat .npmrc)]"; echo "cred=[$(cat .git-credentials)]"; echo "keys=$(ls -A keys | wc -l)"');
+  assert.deepEqual(more.stdout.trim().split('\n'), ['npmrc=[]', 'cred=[]', 'keys=0']);
   assert.equal(await readFile(path.join(root, '.lab-agent/sessions/s.json'), 'utf8'), '{}');
 
   const failed = await sh('echo to-stderr >&2; exit 3');

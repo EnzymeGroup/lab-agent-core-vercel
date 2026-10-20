@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { relative, sep } from 'node:path';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { createWorkspace, getExecutionContext, runCommand, type Workspace } from 'lab-agent-core-vercel';
+import { getExecutionContext, runCommand, sha256 } from 'lab-agent-core-vercel';
+import { lazyWorkspace } from './shared.js';
 
 /**
  * captureEnvironment: record the software environment a task ran in, for reproducibility.
@@ -24,11 +24,10 @@ export interface EnvToolOptions {
   timeoutMs?: number;
 }
 
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 const short = (text: string) => text.trim().split('\n').slice(-3).join(' ').slice(0, 300);
 
 export function envTools(options: EnvToolOptions): ToolSet {
-  let workspace: Promise<Workspace> | undefined;
+  const workspace = lazyWorkspace(options.root);
   return {
     captureEnvironment: tool({
       description: 'Record the software environment for reproducibility: the conda environment (conda env export) and installed Python packages (pip freeze). In a task the files are saved under <outputDirectory>/environment/ and become run artifacts; in chat the text is returned.',
@@ -80,8 +79,7 @@ export function envTools(options: EnvToolOptions): ToolSet {
             notes: [...notes, 'Not in a task, so nothing was saved. Run it in a task to keep the files as run artifacts.'],
           };
         }
-        workspace ??= createWorkspace(options.root);
-        const files = await workspace;
+        const files = await workspace();
         const output = relative(files.root, context.outputDirectory).split(sep).join('/');
         const saved = [];
         for (const file of captured) {

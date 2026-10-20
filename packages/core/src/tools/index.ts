@@ -13,13 +13,19 @@ export { pythonToolAllowed } from './python.js';
 const DEFAULT_MAX_TOOL_OUTPUT = 1_048_576;
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
 
+/** limits.maxToolOutputBytes, default 1 MiB: the largest serialized result any tool may return. */
+export function maxToolOutputBytes(config: AgentConfig): number {
+  const maxBytes = config.limits?.maxToolOutputBytes ?? DEFAULT_MAX_TOOL_OUTPUT;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('maxToolOutputBytes must be a positive safe integer.');
+  return maxBytes;
+}
+
 /**
  * Assemble the model's tool set in a stable order:
  * built-ins → findFiles/searchFiles → memory tools → runPython → config.tools → MCP tools. Names must be unique.
  */
 export function createTools(workspace: Workspace, config: AgentConfig, skills: readonly Skill[] = [], mcpTools: ToolSet = {}): ToolSet {
-  const maxBytes = config.limits?.maxToolOutputBytes ?? DEFAULT_MAX_TOOL_OUTPUT;
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('maxToolOutputBytes must be a positive safe integer.');
+  const maxBytes = maxToolOutputBytes(config);
   const tools: ToolSet = Object.create(null) as ToolSet;
   const register = (name: string, native: Tool) => {
     if (!TOOL_NAME.test(name)) throw new Error(`Invalid tool name: ${name}`);

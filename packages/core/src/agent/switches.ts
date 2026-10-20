@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { InputError } from '../errors.js';
 import { saveToolSettings, type ToolSettings } from '../store/tools.js';
+import { pythonToolAllowed } from '../tools/index.js';
+import type { AgentConfig, TurnMode } from '../types.js';
 import type { AgentResources } from './resources.js';
 
 /**
@@ -25,6 +27,15 @@ export function toolSwitches(settings: ToolSettings): ToolSwitches {
   };
 }
 
+/**
+ * Which tools the model may call in this step: not switched off, and runPython only when a
+ * registered script allows the turn's mode. Used for the main agent and for helpers.
+ */
+export function availableNow(config: AgentConfig, switches: ToolSwitches, mode: TurnMode | undefined): (name: string) => boolean {
+  const pythonOff = !!mode && !pythonToolAllowed(config, mode);
+  return name => switches.enabled(name) && !(pythonOff && name === 'runPython');
+}
+
 const changeSchema = z.object({
   name: z.string().min(1).max(64),
   enabled: z.boolean().optional(),
@@ -45,8 +56,7 @@ export async function updateToolSwitch(res: AgentResources, input: unknown): Pro
       disabled: toggle(res.switches.settings.disabled, enabled === undefined ? undefined : !enabled),
       alwaysAllow: toggle(res.switches.settings.alwaysAllow, alwaysAllow),
     };
-    await saveToolSettings(res.root, next);
-    res.switches.settings = { disabled: [...new Set(next.disabled)].sort(), alwaysAllow: [...new Set(next.alwaysAllow)].sort() };
+    res.switches.settings = await saveToolSettings(res.root, next);
     return res.switches.settings;
   } finally {
     await lease.release();

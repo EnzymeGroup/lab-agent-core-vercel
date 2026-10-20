@@ -1,22 +1,50 @@
-import type { UIMessage } from 'ai';
+import type { ToolSet, UIMessage } from 'ai';
 import { InputError } from '../errors.js';
-import type { ApprovalDecision, PendingApproval, SessionRecord } from '../types.js';
+import type { AgentConfig, ApprovalDecision, PendingApproval, SessionRecord } from '../types.js';
+import type { ToolSwitches } from './switches.js';
 
 /**
- * Human approval for configured tools, using the AI SDK's native toolApproval.
- * A turn that reaches such a call ends with the part in state "approval-requested";
- * respond() writes the decision onto that part and continues the same assistant message.
+ * Human approval, through the AI SDK's native toolApproval.
+ * approvalPolicy decides which calls pause. A turn that reaches such a call ends with the part in
+ * state "approval-requested"; respond() writes the decision onto that part and continues the same
+ * assistant message.
  */
 
 type ToolPart = { type: string; toolName?: string; toolCallId: string; state: string; input?: unknown; approval?: { id: string; approved?: boolean; reason?: string } };
+type NeedsApproval = (input: unknown, options: { toolCallId: string; messages: unknown[]; context: unknown }) => boolean | PromiseLike<boolean>;
 
 const isToolPart = (part: UIMessage['parts'][number]): boolean => part.type === 'dynamic-tool' || part.type.startsWith('tool-');
 const toolName = (part: ToolPart) => part.type === 'dynamic-tool' ? part.toolName ?? '' : part.type.slice(5);
 
 /** "*" matches everything, "mcp_*" a prefix, anything else an exact name. */
-export function approvalMatcher(patterns: readonly string[] = []): (name: string) => boolean {
+function approvalMatcher(patterns: readonly string[] = []): (name: string) => boolean {
   return name => patterns.some(pattern => pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern);
 }
+
+/**
+ * The one answer to "does this call wait for a person?": the tool is listed in config.approval or
+ * declares needsApproval (true, or a function of its input), and is not switched to always allow.
+ */
+export function approvalPolicy(config: AgentConfig, tools: ToolSet, switches: ToolSwitches) {
+  const listed = approvalMatcher(config.approval);
+  const own = (name: string) => (Object.hasOwn(tools, name) ? tools[name].needsApproval : undefined) as boolean | NeedsApproval | undefined;
+  return {
+    /** Static: may this tool ever pause? Helpers never get such tools; Capabilities shows it; alwaysAllow requires it. */
+    needsApproval: (name: string) => listed(name) || (own(name) != null && own(name) !== false),
+    /**
+     * Per call, read at call time so alwaysAllow applies from the next call.
+     * The SDK ignores a tool's own needsApproval once toolApproval is a function, so it is applied here.
+     */
+    async pauses(name: string, input: unknown, toolCallId: string, messages: unknown[]): Promise<boolean> {
+      if (switches.allowed(name)) return false;
+      if (listed(name)) return true;
+      const rule = own(name);
+      return typeof rule === 'function' ? !!await rule(input, { toolCallId, messages, context: undefined }) : !!rule;
+    },
+  };
+}
+
+export type ApprovalPolicy = ReturnType<typeof approvalPolicy>;
 
 /** Tool calls in the last assistant message that still wait for a decision. */
 export function pendingApprovals(session: SessionRecord): PendingApproval[] {

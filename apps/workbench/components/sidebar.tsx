@@ -19,7 +19,7 @@ interface Props {
   canCreate: boolean;
   onNewSession(): void;
   onSelectSession(id: string): void;
-  onUseInput(path: string): void;
+  onUseInput(path: string, attach: boolean): void;
   onShowCapabilities(section?: CapabilitySection): void;
 }
 

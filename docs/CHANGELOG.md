@@ -42,6 +42,8 @@ Added:
 Fixed:
 
 - A tool's own AI SDK `needsApproval` (`true` or a function of its input) pauses the turn again. Core's per-call `toolApproval` function had replaced it, so such tools ran without asking unless they were also listed in `approval`. These tools now also count as needing approval for helpers, Capabilities and `alwaysAllow`.
+- The extras shell sandbox used its own, shorter list of secret names and missed `keys/`, `.netrc`, `.npmrc`, `.pypirc`, `.git-credentials` and service-account files. It now uses Core's rule (`isSensitiveName`).
+- Input fingerprinting skips every name the file policy hides (previously a shorter list), so a hidden file such as `credentials.json` inside `data/` is no longer hashed into provenance.
 
 Changed:
 

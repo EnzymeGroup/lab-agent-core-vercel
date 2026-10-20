@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { createWorkspace, getExecutionContext, type SubagentConfig, type Workspace } from 'lab-agent-core-vercel';
+import { getExecutionContext, sha256, type SubagentConfig, type Workspace } from 'lab-agent-core-vercel';
+import { lazyWorkspace, serialQueue } from './shared.js';
 import { readPage, type WebToolOptions } from './web.js';
 
 /**
@@ -53,26 +53,18 @@ const canonicalUrl = (value: string) => {
   return url.href;
 };
 
-// One writer per sources file, so parallel helpers never lose a record.
-const queues = new Map<string, Promise<unknown>>();
-function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
-  const previous = queues.get(key) ?? Promise.resolve();
-  const next = previous.catch(() => {}).then(work);
-  queues.set(key, next);
-  void next.finally(() => { if (queues.get(key) === next) queues.delete(key); }).catch(() => {});
-  return next;
-}
+// One writer per sources file, across tool sets too, so parallel helpers never lose a record.
+const serialized = serialQueue();
 
 export function researchTools(options: ResearchToolOptions): ToolSet {
   const name = options.file ?? 'sources.json';
   if (!/^[A-Za-z0-9_.-]+\.json$/u.test(name)) throw new Error(`Invalid sources file name: ${name}`);
-  let workspace: Promise<Workspace> | undefined;
+  const workspace = lazyWorkspace(options.root);
 
   const location = async () => {
     const context = getExecutionContext();
     if (!context?.outputDirectory) throw new Error('citeSource records sources for a task. Run deep research in task mode.');
-    workspace ??= createWorkspace(options.root);
-    const files = await workspace;
+    const files = await workspace();
     return { files, path: `${relative(files.root, context.outputDirectory).split(sep).join('/')}/${name}` };
   };
   const load = async (files: Workspace, path: string): Promise<SourceRecord[]> => {
@@ -98,13 +90,13 @@ export function researchTools(options: ResearchToolOptions): ToolSet {
         if (!normalizeQuote(page.text).includes(normalizeQuote(quote))) {
           throw new Error(`The quote was not found on ${page.url}${page.truncated ? ' (only the first part of the page was read)' : ''}. Copy the exact sentence from webFetch output; paraphrases are not accepted.`);
         }
-        const sha256 = createHash('sha256').update(page.text).digest('hex');
+        const pageHash = sha256(page.text);
         return serialized(path, async () => {
           const sources = await load(files, path);
           const key = canonicalUrl(page.url);
           let source = sources.find(item => canonicalUrl(item.url) === key);
           if (!source) {
-            source = { id: `S${sources.length + 1}`, url: page.url, ...(title ?? page.title ? { title: title ?? page.title } : {}), retrievedAt: new Date().toISOString(), sha256, quotes: [] };
+            source = { id: `S${sources.length + 1}`, url: page.url, ...(title ?? page.title ? { title: title ?? page.title } : {}), retrievedAt: new Date().toISOString(), sha256: pageHash, quotes: [] };
             sources.push(source);
           }
           if (!source.quotes.some(item => normalizeQuote(item) === normalizeQuote(quote))) source.quotes.push(quote.trim());

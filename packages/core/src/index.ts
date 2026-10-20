@@ -19,12 +19,14 @@ export { createRequestHandler } from './server/routes.js';
 
 // Records
 export { acquireOperation, lockOwner } from './store/lock.js';
+export { atomicJSON } from './store/files.js';
+export { sha256 } from './store/hash.js';
 export { createSessionStore } from './store/sessions.js';
 export { createRunStore } from './runs/store.js';
 export { checkRun } from './runs/check.js';
 
 // Building blocks for custom tools
-export { createWorkspace, type Workspace } from './workspace/workspace.js';
+export { createWorkspace, isSensitiveName, type Workspace } from './workspace/workspace.js';
 export { getExecutionContext, runWithExecutionContext, type ExecutionContext } from './workspace/context.js';
 export { runCommand, type CommandOptions, type CommandResult, type CommandError } from './workspace/process.js';
 export { createTools, waitForToolExecutions, pythonToolAllowed } from './tools/index.js';

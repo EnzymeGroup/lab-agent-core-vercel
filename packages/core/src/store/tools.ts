@@ -23,7 +23,10 @@ export async function readToolSettings(root: string): Promise<ToolSettings> {
   return settingsSchema.parse(await readJSON(root, FILE));
 }
 
-export async function saveToolSettings(root: string, settings: ToolSettings): Promise<void> {
+/** Deduplicate, sort, validate and save; returns what was saved. */
+export async function saveToolSettings(root: string, settings: ToolSettings): Promise<ToolSettings> {
   const unique = (names: string[]) => [...new Set(names)].sort();
-  await atomicJSON(root, FILE, settingsSchema.parse({ disabled: unique(settings.disabled), alwaysAllow: unique(settings.alwaysAllow) }));
+  const saved = settingsSchema.parse({ disabled: unique(settings.disabled), alwaysAllow: unique(settings.alwaysAllow) });
+  await atomicJSON(root, FILE, saved);
+  return saved;
 }

@@ -4,7 +4,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, CircleAlert, ListChecks, LoaderCircle, ShieldQuestion, Square } from 'lucide-react';
-import { api, duration, errorMessage, responseError, type AgentState, type SessionRecord, type TurnMetadata } from '../lib/api';
+import { api, duration, errorMessage, MAX_ATTACHMENTS, MAX_TASK_INPUTS, responseError, type AgentState, type DraftReference, type SessionRecord, type TurnMetadata } from '../lib/api';
 import Composer, { type Mode } from './composer';
 import Message, { PlanChecklist } from './message';
 import { Button } from './ui/button';
@@ -19,14 +19,11 @@ interface Props {
   token: string;
   session: SessionRecord;
   state?: AgentState;
-  draftReference?: { id: string; text: string; path: string };
+  draftReference?: DraftReference;
   onStateRefresh(): Promise<AgentState | undefined>;
   onSessionUpdate(session: SessionRecord): void;
 }
 
-const MAX_BINDINGS = 256;
-const MAX_ATTACHMENTS = 8;
-const ATTACHABLE = /\.(?:png|jpe?g|gif|webp|pdf)$/iu;
 
 function Notice({ tone = 'neutral', role, children }: { tone?: 'neutral' | 'danger'; role?: 'alert' | 'status'; children: React.ReactNode }) {
   return (
@@ -242,7 +239,7 @@ export default function Conversation({ token, session, state, draftReference, on
     if (!draftReference || draftReference.id === insertedReference.current) return;
     insertedReference.current = draftReference.id;
     // Images and PDFs are shown to the model with the next message instead of being bound as task inputs.
-    if (ATTACHABLE.test(draftReference.path)) {
+    if (draftReference.attach) {
       // The effect runs once per reference, so reading this render's attachments is current.
       if (attachments.length >= MAX_ATTACHMENTS && !attachments.includes(draftReference.path)) {
         setBindingError(`A message can carry up to ${MAX_ATTACHMENTS} attachments.`);
@@ -254,8 +251,8 @@ export default function Conversation({ token, session, state, draftReference, on
       return;
     }
     setMode('task');
-    if (boundInputsRef.current.length >= MAX_BINDINGS && !boundInputsRef.current.includes(draftReference.path)) {
-      setBindingError('A task can bind up to 256 input declarations. Remove one before using another uploaded file.');
+    if (boundInputsRef.current.length >= MAX_TASK_INPUTS && !boundInputsRef.current.includes(draftReference.path)) {
+      setBindingError(`A task can bind up to ${MAX_TASK_INPUTS} input declarations. Remove one before using another uploaded file.`);
       return;
     }
     setBindingError('');
