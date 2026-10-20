@@ -16,6 +16,10 @@
     "./web": {
       "types": "./dist/web.d.ts",
       "import": "./dist/web.js"
+    },
+    "./hpc": {
+      "types": "./dist/hpc.d.ts",
+      "import": "./dist/hpc.js"
     }
   },
   "files": [

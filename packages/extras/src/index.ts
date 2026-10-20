@@ -3,4 +3,5 @@
  * Each module is also a subpath export (lab-agent-extras/web, …) so a project loads only what it uses.
  */
 export { webTools, tavily, htmlToText, type SearchProvider, type SearchResult, type TavilyOptions, type WebToolOptions } from './web.js';
+export { hpcTools, slurm, localJobs, type HpcToolOptions, type JobAdapter, type JobDefinition, type JobRecord, type JobStatus, type SlurmOptions, type SubmitSpec } from './hpc.js';
 export { guardedGet, isPrivateAddress, type GuardedRequestOptions, type GuardedResponse } from './net.js';
