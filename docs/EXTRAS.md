@@ -152,3 +152,32 @@ The Skill tells the main agent to scope the question, split it into 3–5 sub-qu
 What this proves: each cited page contained the quoted sentence when it was read. It does not prove the report states the source correctly, that the source is right, or that important sources were not missed. The verifier helper and a person reading the report cover part of that.
 
 Not verified: tested with local pages and the deterministic model fixture, which follows a scripted plan. How well a real model splits questions, judges sources and writes is untested.
+
+## Coding: `lab-agent-extras/coding`
+
+This module steps outside Core's "trusted code only" model: `shell` runs commands the model writes. Each tool that changes something declares the AI SDK's `needsApproval`, so every call waits for a person; Core honors that without listing the tool in `approval`, and helpers never receive these tools. "Always allow" in the workbench removes the pause per tool; use it for `shell` only if you accept unreviewed commands.
+
+```ts
+import { codingTools } from 'lab-agent-extras/coding';
+
+tools: { ...codingTools({ root, fileAccess }) },
+fileAccess: { mode: 'development', writeRoots: ['src', 'tests'] },
+```
+
+| Tool | Approval | Input | Output |
+| --- | --- | --- | --- |
+| `editFile` | yes | `{ path, oldText, newText, replaceAll = false }` | `{ path, editId, created, replacements, bytes, diff }` |
+| `undoEdit` | yes | `{ editId? , count 1–20 = 1 }` | `{ undone[{ editId, path, deleted? }] }` |
+| `gitStatus` | no | `{}` | `{ branch, changes[] }` |
+| `gitDiff` | no | `{ path?, staged = false }` | `{ diff, truncated? }` |
+| `shell` | yes | `{ command, timeoutSeconds ≤ maxTimeoutSeconds = 120 }` | `{ exitCode, stdout, stderr, durationMs, sandbox, timedOut? }` |
+
+Edits. `oldText` must occur exactly once (or set `replaceAll`); an empty `oldText` creates a new file. Writes go through Core's write policy, so they need a task: the task output directory, or `writeRoots` in `development` mode. Before each edit the previous content is kept in `.lab-agent/extras/edits/`; `undoEdit` restores newest first, deletes files that `editFile` created, and stops when a file changed since the edit, so it never overwrites later work. Edits and undos run one at a time even when the model calls several in one step.
+
+Git. `gitStatus` and `gitDiff` run with fsmonitor, external diff programs and textconv filters switched off, so a repository's own configuration cannot run programs through them. `.env*`, key files and `.lab-agent/` are left out of both; a path is checked against the file policy and passed as a literal pathspec.
+
+Shell. `bash --noprofile --norc -c <command>` in the project directory. With `sandbox: 'bwrap'` (the default) it runs in a bubblewrap sandbox: no network (`network: true` allows it), the system read-only, `/tmp` and your home directory empty (`hide`), the project writable, `.lab-agent/` replaced by an empty directory, `runs/` read-only, and `.env*`, key and credential files and `secrets`/`.ssh`/`.aws` directories inside the project blanked. Only `PATH`, `HOME`, `LANG`, `TERM`, `CI` and `shell.env` reach the command. `readOnly` shows paths such as a conda install that `hide` would cover. When bwrap is missing the tool fails; `sandbox: 'none'` runs the command directly with your account (the environment is still cleared). Exit codes, including failures, are returned to the model; timeouts stop the whole process tree; the end of long output is kept.
+
+Limits: the sandbox protects your machine from mistakes and from commands steered by page or file content, not from a determined attacker with your approval. A command can still change any project file, delete work not yet committed, or, with `network: true`, send project data out. `undoEdit` does not cover shell changes; use `gitDiff` and git to review and revert them. Approve each command after reading it.
+
+Verified here: the sandbox tests run real commands in bubblewrap 0.6.1 on this machine (read-only system, empty home, blanked secrets, read-only `runs/`, no loopback access without `network`). Behavior on other kernels and bwrap versions is not checked.

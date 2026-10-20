@@ -374,6 +374,7 @@
       <li><code>files.ts</code> inspectFile：大文件只读开头，识别 FASTQ / BAM / VCF…</li>
       <li><code>env.ts</code> 导出 conda 环境和 pip 包列表，存成 run 产物</li>
       <li><code>research.ts</code> deep research：并行 researcher、引用逐字核对、引用检查程序</li>
+      <li><code>coding.ts</code> editFile / undoEdit、git 只读、bwrap 沙箱 shell（每次都要审批）</li>
       <li><code>net.ts</code> 出网请求逐跳检查，拒绝内网地址</li>
       <li>测试单独放在 <code>tests/extras/</code></li></ul></div>
   </div>
@@ -386,7 +387,7 @@
       <tr><td><b>Vercel AI SDK 内核</b></td><td>模型 ↔ 工具循环本身：调用模型、流式输出、解析工具调用、执行工具、把结果塞回、判断模型说完了；消息格式；MCP 客户端</td><td><code>ToolLoopAgent</code> · <code>UIMessage</code> · <code>@ai-sdk/mcp</code></td></tr>
       <tr><td><b>Core harness（我们）</b></td><td>循环之外的一切，加上循环里的钩子：排队和锁、会话和 run、组装上下文（压缩、截断、记忆目录）、内置工具、文件权限、审批、插话、重试、强制停止、收尾记账、跑检查、返工、崩溃恢复、HTTP 服务、界面</td><td><code>gate</code> · <code>turn</code> · <code>finish</code> · <code>tools/</code> · <code>runs/</code></td></tr>
       <tr><td><b>应用（你的项目）</b></td><td>领域知识和验收标准：项目说明、Skill、领域工具和 Python 脚本、MCP 服务、检查程序、界面文案</td><td><code>AGENTS.md</code> · <code>agent.config.ts</code> · <code>tools/*.py</code></td></tr>
-      <tr><td><b>Extras（可选包，我们写）</b></td><td>通用的额外工具，项目按需引入：联网搜索和抓取、HPC 长任务（Slurm / 本机后台进程）、生信数据库查询、大文件预览、环境导出、带引用核对的 deep research。只是普通的原生工具和 subagent 预设，审批、开关、记录照常适用</td><td><code>lab-agent-extras/web</code> · <code>/hpc</code> · <code>/bio</code> · <code>/files</code> · <code>/env</code> · <code>/research</code></td></tr>
+      <tr><td><b>Extras（可选包，我们写）</b></td><td>通用的额外工具，项目按需引入：联网搜索和抓取、HPC 长任务（Slurm / 本机后台进程）、生信数据库查询、大文件预览、环境导出、带引用核对的 deep research、写代码（精确编辑、撤销、沙箱 shell）。只是普通的原生工具和 subagent 预设，审批、开关、记录照常适用</td><td><code>lab-agent-extras/web</code> · <code>/hpc</code> · <code>/bio</code> · <code>/files</code> · <code>/env</code> · <code>/research</code> · <code>/coding</code></td></tr>
       <tr><td><b>模型服务</b></td><td>思考和决定下一步：回答，或者要调用哪个工具、传什么参数</td><td>OpenAI 兼容接口 · Anthropic</td></tr>
     </tbody>
   </table>
@@ -402,7 +403,7 @@
     <li><b>崩溃恢复从不重放工具。</b>审批暂停不算崩溃，恢复时不动它；客户端只能答复服务端自己记录的待审批调用。</li>
     <li><b>模型的文件工具（包括搜索和附件读取）看不到密钥和 <code>.lab-agent/</code>；</b>记忆只能通过记忆工具访问。</li>
     <li><b>配置是上限。</b>工具开关只能关掉已有工具，或让需要审批的工具“始终允许”，不能凭空加工具；每个任务都记下当时的开关。</li>
-    <li><b>扩展包可选，Core 不依赖它。</b><code>webFetch</code> 默认拒绝内网和云元数据地址，网页内容只当数据，不当指令。</li>
+    <li><b>扩展包可选，Core 不依赖它。</b><code>webFetch</code> 默认拒绝内网和云元数据地址，网页内容只当数据，不当指令。唯一会执行模型所写命令的是 coding 的 <code>shell</code>：跑在 bwrap 沙箱里，每次调用都要人审批。</li>
     <li><b>只跑可信的本地代码。</b>注册的 Python 和 MCP 没有沙箱，用的是本机权限；服务只监听 127.0.0.1。</li>
     <li><b>没有自建模型循环、没有第二套消息格式、没有工作流调度器。</b>编排靠钩子、子 agent 和多段 turn 完成。</li>
   </ol></div>

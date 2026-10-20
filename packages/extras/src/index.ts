@@ -8,4 +8,5 @@ export { bioTools, type BioToolOptions } from './bio.js';
 export { inspectTools, inspect, type InspectToolOptions } from './files.js';
 export { envTools, type EnvToolOptions } from './env.js';
 export { researchTools, researchSubagents, normalizeQuote, CITATIONS_CHECKER, RESEARCH_SKILL_DIR, type ResearchToolOptions, type ResearchSubagentOptions, type SourceRecord } from './research.js';
+export { codingTools, lineDiff, type CodingToolOptions, type ShellOptions } from './coding.js';
 export { guardedGet, isPrivateAddress, type GuardedRequestOptions, type GuardedResponse } from './net.js';

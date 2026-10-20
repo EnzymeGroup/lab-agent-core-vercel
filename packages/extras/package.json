@@ -36,6 +36,10 @@
     "./research": {
       "types": "./dist/research.d.ts",
       "import": "./dist/research.js"
+    },
+    "./coding": {
+      "types": "./dist/coding.d.ts",
+      "import": "./dist/coding.js"
     }
   },
   "files": [
