@@ -47,7 +47,8 @@ function assertOutputSize(value: unknown, maxBytes: number): void {
 async function* guardedIterator(result: AsyncIterable<unknown>, run: <T>(callback: () => T) => T, signal: AbortSignal | undefined, owner: AbortSignal | undefined, maxBytes: number) {
   const iterator = result[Symbol.asyncIterator]();
   let finish!: () => void;
-  trackExecution(new Promise<void>(resolve => { finish = resolve; }), owner);
+  // Settles only through finish() below and never rejects.
+  void trackExecution(new Promise<void>(resolve => { finish = resolve; }), owner);
   try {
     for (;;) {
       signal?.throwIfAborted();

@@ -99,7 +99,8 @@ export default function Workbench() {
   }, []);
 
   useEffect(() => { void connect(); }, [connect]);
-  useEffect(() => { if (state) applyBranding(state.ui); }, [state?.ui?.title, state?.ui?.accent]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-brand only when the title or accent changes, not on every state poll.
+  useEffect(() => { if (state) applyBranding(state.ui); }, [state?.ui?.title, state?.ui?.accent]);
   // Poll faster while work is running; refresh when the tab becomes visible.
   useEffect(() => {
     if (!token) return;
@@ -161,7 +162,7 @@ export default function Workbench() {
     setPanel('conversation');
   }
 
-  async function useInput(path: string, attach: boolean) {
+  async function chooseInput(path: string, attach: boolean) {
     if (!sessionId && !await newSession()) return;
     setDraftReference({ id: crypto.randomUUID(), text: `Input file: ${path}`, path, attach });
     setPanel('conversation');
@@ -197,7 +198,7 @@ export default function Workbench() {
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)] desk:grid-cols-[256px_minmax(0,1fr)_340px] desk:grid-rows-[auto_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_400px]">
         <aside aria-label="Sessions" className={cn(pane('sessions'), 'row-start-3 bg-sidebar desk:col-start-1 desk:row-span-2 desk:row-start-1 desk:border-r')}>
           <Sidebar token={token} state={state} title={title} sessionId={sessionId} creating={creating} canCreate={canCreate}
-            onNewSession={() => { void newSession(); }} onSelectSession={selectSession} onUseInput={(path, attach) => { void useInput(path, attach); }} onShowCapabilities={section => setCapabilities({ section })} />
+            onNewSession={() => { void newSession(); }} onSelectSession={selectSession} onUseInput={(path, attach) => { void chooseInput(path, attach); }} onShowCapabilities={section => setCapabilities({ section })} />
         </aside>
 
         <header className="row-start-1 flex h-14 min-w-0 items-center gap-2 border-b bg-background px-3 desk:col-start-2 desk:px-5">

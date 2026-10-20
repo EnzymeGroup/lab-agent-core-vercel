@@ -8,7 +8,7 @@ import { request as httpRequest } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createHttpServer, modelFromEnv, RunError, BusyError, projectContext } from '../packages/core/dist/index.js';
+import { createAgent, createHttpServer, RunError, BusyError, projectContext } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
 import { copyExample, fixtureModel, repository } from './fixtures/project.mjs';
 

@@ -96,7 +96,7 @@ export default function Preview({ token, runId, path, onClose }: { token: string
           {preview.kind === 'markdown' && <div className="rounded-md border p-5"><Markdown>{preview.content ?? ''}</Markdown></div>}
           {preview.kind === 'image' && imageUrl && (
             <div className="flex justify-center rounded-md bg-muted p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a static asset */}
+              {/* A plain img: the source is an authenticated blob URL, not a static asset next/image could optimize. */}
               <img src={imageUrl} alt={`Artifact ${path}`} className="max-h-[60vh] object-contain" onError={() => setError('The image could not be decoded. Download the original file to inspect it locally.')} />
             </div>
           )}
