@@ -110,7 +110,7 @@ Extras (`packages/extras/src`, subpath exports `lab-agent-extras/<module>`):
 | --- | --- |
 | `net.ts` | Outbound GET with the private/reserved-address check at connect time, on every redirect |
 | `web.ts` | `webSearch` (Tavily or any `SearchProvider`), `webFetch`, `readPage`, HTML to text |
-| `hpc.ts` | `submitJob`, `jobStatus`, `jobLogs`, `cancelJob`; `slurm()` and `localJobs()` adapters; state in `jobs/<id>/job.json` |
+| `hpc.ts`, `hpc-adapters.ts` | `submitJob`, `jobStatus`, `jobLogs`, `cancelJob` and job state in `jobs/<id>/job.json`; the adapter contract with `slurm()` and `localJobs()` |
 | `bio.ts` | NCBI E-utilities, UniProt and Ensembl lookups, paced per service, with source URL and retrieval time |
 | `files.ts` | `inspectFile`: format, compression and sample statistics from the first MiB, through Core's file policy |
 | `env.ts` | `captureEnvironment`: conda export and pip freeze, saved as run artifacts in a task |
@@ -127,14 +127,15 @@ Workbench (`apps/workbench`, Next.js static export, Tailwind CSS v4, shadcn-styl
 | `app/globals.css` | Neutral design tokens; `ui.accent` sets `--brand`, used only for primary buttons and the focus ring |
 | `components/brand.tsx` | Monochrome monogram from `ui.title` (mobile header) |
 | `components/sidebar.tsx` | Sessions, project, input files, capabilities entry |
-| `components/conversation.tsx` | `useChat` transport (new turns and approval responses), history restore, cancel, steering, plan panel, compaction |
+| `components/conversation.tsx` | `useChat` transport (new turns and approval responses), history restore, cancel, steering, compaction |
+| `components/use-draft.ts`, `conversation-parts.tsx` | The next message's draft (text, mode, input bindings, attachments, files chosen in Input files); notices, empty state, plan panel, activity bar |
 | `components/composer.tsx` | Message box, Task/Chat switch, model picker, context meter with Compact, task input bindings, attachment chips, send-to-running-turn |
 | `components/message.tsx`, `markdown.tsx` | Messages, agent step timeline (tool calls, reasoning), Approve/Always allow/Deny, plan checklist, helper answers, steering and repair notes, safe Markdown |
 | `components/run-panel.tsx`, `run-evidence.tsx`, `status.tsx` | Runs, Execute → Check → Deliver progress, model calls, cost, repairs, checks, outputs, provenance |
 | `components/capabilities.tsx`, `skills.tsx`, `memory.tsx`, `tool-switches.tsx`, `mcp-servers.tsx` | Models, limits and prices, expandable Skills, project memory (read, forget), tools with Enabled/Always allow switches, helpers and compaction, MCP add/test/remove |
 | `components/artifact-preview.tsx`, `input-files.tsx` | Preview dialog and uploads |
 | `components/ui/*` | Button, Badge, Dialog primitives |
-| `lib/api.ts`, `lib/branding.ts` | Authenticated API calls; applying `ui` config |
+| `lib/api.ts`, `lib/branding.ts`, `lib/messages.ts` | Authenticated API calls and client limits; applying `ui` config; read-only views over a session's messages (plan, context, pending approval, current tool) |
 
 Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-assistant`, `.message-repair`, `.tool-call`, `.tool-body`, `.tool-approval`, `.approval-actions`, `.plan-panel`, `.steer-note`, `.steer-status`, `.compaction-note`, `.memory-list`, `.model-calls`, `.session-usage`, `.task-inputs`, `.task-input-body`, `.chat-policy`, `.input-files`, `.capability-list`, `.skill-fingerprints`, `.connection-banner`.
 

@@ -1,18 +1,23 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, CircleAlert, ListChecks, LoaderCircle, ShieldQuestion, Square } from 'lucide-react';
-import { api, duration, errorMessage, MAX_ATTACHMENTS, MAX_TASK_INPUTS, responseError, type AgentState, type DraftReference, type SessionRecord, type TurnMetadata } from '../lib/api';
-import Composer, { type Mode } from './composer';
-import Message, { PlanChecklist } from './message';
+import { CircleAlert, LoaderCircle, ShieldQuestion } from 'lucide-react';
+import { api, errorMessage, responseError, type AgentState, type DraftReference, type SessionRecord } from '../lib/api';
+import { currentStep, hasPendingApproval, latestContext, latestPlan } from '../lib/messages';
+import Composer from './composer';
+import { ActivityBar, EmptyConversation, Notice, PlanPanel } from './conversation-parts';
+import Message from './message';
 import { Button } from './ui/button';
+import { useDraft } from './use-draft';
 
 /**
  * One session. The server owns history: the browser sends only the newest user
  * message, and after any stream ends (or the page reloads mid-run) it restores
  * the saved session rather than trusting its local buffer.
+ * The next message's draft lives in use-draft.ts, message views in lib/messages.ts,
+ * and presentational parts in conversation-parts.tsx.
  */
 
 interface Props {
@@ -24,102 +29,11 @@ interface Props {
   onSessionUpdate(session: SessionRecord): void;
 }
 
-
-function Notice({ tone = 'neutral', role, children }: { tone?: 'neutral' | 'danger'; role?: 'alert' | 'status'; children: React.ReactNode }) {
-  return (
-    <div role={role} className={tone === 'danger'
-      ? 'inline-error flex gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm'
-      : 'flex gap-3 rounded-md border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground'}>
-      {children}
-    </div>
-  );
-}
-
-function EmptyConversation({ state, onStarter }: { state?: AgentState; onStarter(prompt: string, mode?: Mode): void }) {
-  const starters = state?.ui?.starters ?? [];
-  return (
-    <div className="conversation-empty mx-auto max-w-2xl px-6 pt-16 pb-8 desk:pt-24">
-      <h2 className="text-lg font-semibold">What should we work on?</h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{state?.ui?.tagline ?? 'Describe what you need and the files or acceptance criteria that matter.'}</p>
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-        <strong className="font-medium text-foreground">Task</strong> creates a tracked run with outputs and a separate delivery check.{' '}
-        <strong className="font-medium text-foreground">Chat</strong> continues the session without a run.
-      </p>
-      {starters.length > 0 && (
-        <ul className="mt-6 divide-y rounded-md border">
-          {starters.map(starter => (
-            <li key={starter.title}>
-              <button type="button" onClick={() => onStarter(starter.prompt, starter.mode)} className="block w-full px-3 py-2.5 text-left transition-colors hover:bg-accent">
-                <span className="flex items-baseline gap-2 text-sm font-medium">
-                  {starter.title}
-                  <span className="text-[11px] font-normal text-muted-foreground">{starter.mode === 'chat' ? 'Chat' : 'Task'}</span>
-                </span>
-                <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">{starter.prompt}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** Bounded context size from the newest assistant message that recorded it. */
-function latestContext(messages: UIMessage[]): TurnMetadata['context'] {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const context = (messages[index].metadata as TurnMetadata | undefined)?.context;
-    if (messages[index].role === 'assistant' && context) return context;
-  }
-}
-
-type PlanItem = { step: string; status: 'pending' | 'in_progress' | 'done' };
-
-/** The newest updatePlan call in this session, shown above the composer. */
-function latestPlan(messages: UIMessage[]): PlanItem[] | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const parts = messages[index].parts;
-    for (let part = parts.length - 1; part >= 0; part--) {
-      const item = parts[part] as { type: string; input?: { items?: PlanItem[] } };
-      if (item.type === 'tool-updatePlan' && Array.isArray(item.input?.items)) return item.input.items;
-    }
-  }
-}
-
-function PlanPanel({ items }: { items: PlanItem[] }) {
-  const done = items.filter(item => item.status === 'done').length;
-  return (
-    <details className="plan-panel group rounded-md border bg-background text-xs" open={done < items.length || undefined}>
-      <summary className="flex items-center gap-2 px-3 py-2">
-        <ListChecks className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">Plan</span>
-        <span className="tabular text-muted-foreground">{done}/{items.length}</span>
-        <ChevronRight className="ml-auto size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
-      </summary>
-      <div className="border-t px-3 py-2"><PlanChecklist items={items} /></div>
-    </details>
-  );
-}
-
-const hasPendingApproval = (messages: UIMessage[]) => messages.at(-1)?.role === 'assistant'
-  && messages.at(-1)!.parts.some(part => (part as { state?: string }).state === 'approval-requested');
-
-/** The newest tool call that has not finished, for the activity bar. */
-function currentStep(messages: UIMessage[]): string | undefined {
-  const parts = messages.at(-1)?.role === 'assistant' ? messages.at(-1)!.parts : [];
-  for (let index = parts.length - 1; index >= 0; index--) {
-    const part = parts[index] as { type: string; toolName?: string; state?: string };
-    if (part.type === 'dynamic-tool' || part.type.startsWith('tool-')) {
-      return part.state === 'input-streaming' || part.state === 'input-available' ? part.toolName || part.type.slice(5) : undefined;
-    }
-  }
-}
-
 export default function Conversation({ token, session, state, draftReference, onStateRefresh, onSessionUpdate }: Props) {
-  const [input, setInput] = useState('');
-  const [mode, setMode] = useState<Mode>('task');
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const { input, setInput, mode, setMode, boundInputs, setBoundInputs, bindingError, setBindingError,
+    attachments, setAttachments, modeRef, boundInputsRef, sendingAttachments, sendWith } = useDraft(draftReference, textarea);
   const [model, setModel] = useState(session.model ?? 'default');
-  const [boundInputs, setBoundInputs] = useState<string[]>([]);
-  const [bindingError, setBindingError] = useState('');
   const [streamError, setStreamError] = useState('');
   const [stopping, setStopping] = useState(false);
   const [localStart, setLocalStart] = useState('');
@@ -127,25 +41,16 @@ export default function Conversation({ token, session, state, draftReference, on
   const [compacting, setCompacting] = useState(false);
   const [, tick] = useState(0);
   // Refs let the memoized transport read the latest values without being recreated.
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
   const modelRef = useRef(model);
   modelRef.current = model;
-  const boundInputsRef = useRef(boundInputs);
-  boundInputsRef.current = boundInputs;
-  const [attachments, setAttachments] = useState<string[]>([]);
-  /** Set only for the duration of one send, so the transport sends what the composer showed. */
-  const attachmentsRef = useRef<string[]>([]);
   const refreshRef = useRef(onStateRefresh);
   refreshRef.current = onStateRefresh;
   const restoreRef = useRef<() => Promise<void>>(async () => {});
-  const textarea = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
   const mounted = useRef(true);
   const pendingTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const insertedReference = useRef<string | undefined>(undefined);
 
   const transport = useMemo(() => new DefaultChatTransport({
     api: '/api/chat',
@@ -159,7 +64,7 @@ export default function Conversation({ token, session, state, draftReference, on
         body: {
           sessionId: session.id, mode: modeRef.current, model: modelRef.current,
           ...(modeRef.current === 'task' && boundInputsRef.current.length ? { inputs: [...boundInputsRef.current] } : {}),
-          ...(attachmentsRef.current.length ? { attachments: [...attachmentsRef.current] } : {}),
+          ...(sendingAttachments.current.length ? { attachments: [...sendingAttachments.current] } : {}),
           messages: messages.filter(message => message.role === 'user').slice(-1),
         },
       };
@@ -234,33 +139,6 @@ export default function Conversation({ token, session, state, draftReference, on
   }, [working]);
   useEffect(() => { if (shouldFollow.current) end.current?.scrollIntoView({ behavior: 'instant', block: 'end' }); }, [messages]);
   useEffect(() => { textarea.current?.focus(); }, [session.id]);
-  // An imported file was chosen for this task: insert its path and bind it. Never auto-send.
-  useEffect(() => {
-    if (!draftReference || draftReference.id === insertedReference.current) return;
-    insertedReference.current = draftReference.id;
-    // Images and PDFs are shown to the model with the next message instead of being bound as task inputs.
-    if (draftReference.attach) {
-      // The effect runs once per reference, so reading this render's attachments is current.
-      if (attachments.length >= MAX_ATTACHMENTS && !attachments.includes(draftReference.path)) {
-        setBindingError(`A message can carry up to ${MAX_ATTACHMENTS} attachments.`);
-        return;
-      }
-      setBindingError('');
-      setAttachments(previous => previous.includes(draftReference.path) ? previous : [...previous, draftReference.path]);
-      textarea.current?.focus();
-      return;
-    }
-    setMode('task');
-    if (boundInputsRef.current.length >= MAX_TASK_INPUTS && !boundInputsRef.current.includes(draftReference.path)) {
-      setBindingError(`A task can bind up to ${MAX_TASK_INPUTS} input declarations. Remove one before using another uploaded file.`);
-      return;
-    }
-    setBindingError('');
-    setInput(previous => previous ? `${previous}\n${draftReference.text}` : draftReference.text);
-    setBoundInputs(previous => previous.includes(draftReference.path) ? previous : [...previous, draftReference.path]);
-    textarea.current?.focus();
-  }, [draftReference]);
-
   async function steer(text: string) {
     try {
       await api(token, '/api/steer', { method: 'POST', body: JSON.stringify({ sessionId: session.id, text }) });
@@ -311,14 +189,7 @@ export default function Conversation({ token, session, state, draftReference, on
     clearError();
     setLocalStart(new Date().toISOString());
     shouldFollow.current = true;
-    // The transport reads the attachments for this send; the composer clears at once.
-    attachmentsRef.current = attachments;
-    setAttachments([]);
-    try {
-      await sendMessage({ text });
-    } finally {
-      attachmentsRef.current = [];
-    }
+    await sendWith(() => sendMessage({ text }));
   }
 
   async function cancel() {
@@ -368,18 +239,7 @@ export default function Conversation({ token, session, state, draftReference, on
       </div>
 
       <div className="mx-auto w-full max-w-3xl shrink-0 space-y-2 px-4 pb-4 desk:px-8 desk:pb-6">
-        {working && (
-          <div role="status" className="activity-toolbar flex items-center gap-3 rounded-md border bg-muted/50 py-1 pr-1 pl-3 text-xs">
-            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />
-            <strong className="font-medium">{activeMode === 'chat' ? 'Chat in progress' : 'Task in progress'}</strong>
-            <span className="tabular text-muted-foreground">{duration(startedAt)}</span>
-            {step && <span className="hidden min-w-0 truncate text-muted-foreground md:inline">· <code className="font-mono text-foreground/80">{step}</code></span>}
-            {!streaming && <span className="hidden text-muted-foreground sm:inline">Running on server · restoring history</span>}
-            <Button variant="outline" size="xs" className="ml-auto" onClick={() => { void cancel(); }} disabled={stopping}>
-              <Square className="fill-current" />{stopping ? 'Stopping…' : 'Stop'}
-            </Button>
-          </div>
-        )}
+        {working && <ActivityBar mode={activeMode} startedAt={startedAt} step={step} restoring={!streaming} stopping={stopping} onStop={() => { void cancel(); }} />}
         {plan && <PlanPanel items={plan} />}
         {steerNote && <p className="steer-status text-xs text-muted-foreground" role="status">{steerNote}</p>}
         {awaiting && !streaming && (
