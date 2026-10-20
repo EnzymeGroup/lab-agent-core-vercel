@@ -19,7 +19,16 @@ const MAX_FILENAME_BYTES = 180;
 const PREVIEW_TEXT_BYTES = 256 * 1024;
 
 const SCIENCE_TEXT = ['.fasta', '.fa', '.fna', '.faa', '.pdb', '.cif'];
-export const uploadExtensions = ['.csv', '.tsv', '.json', '.txt', '.md', '.yaml', '.yml', '.log', ...SCIENCE_TEXT];
+/** Binary uploads, used as message attachments; checked by their leading bytes instead of UTF-8. */
+const BINARY_SIGNATURES: Record<string, (data: Buffer) => boolean> = {
+  '.png': data => data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  '.jpg': data => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff,
+  '.jpeg': data => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff,
+  '.gif': data => data.subarray(0, 4).toString('latin1') === 'GIF8',
+  '.webp': data => data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP',
+  '.pdf': data => data.subarray(0, 5).toString('latin1') === '%PDF-',
+};
+export const uploadExtensions = ['.csv', '.tsv', '.json', '.txt', '.md', '.yaml', '.yml', '.log', ...SCIENCE_TEXT, ...Object.keys(BINARY_SIGNATURES)];
 const PREVIEW_TEXT = new Set(['.csv', '.tsv', '.json', '.md', '.txt', '.log', '.yaml', '.yml', ...SCIENCE_TEXT]);
 
 export interface ImportedFile { path: string; name: string; bytes: number; sha256: string; importedAt: string }
@@ -80,8 +89,13 @@ export async function importUpload(root: string, name: string, request: Request)
     }
     const data = await readBody(request, uploadLimit, 'Input upload exceeds 10 MiB.');
     if (!data.length) throw new InputError('Input file is empty.');
-    if (data.includes(0)) throw new InputError('Only UTF-8 text files can be imported.');
-    try { new TextDecoder('utf-8', { fatal: true }).decode(data); } catch { throw new InputError('Only UTF-8 text files can be imported.'); }
+    const signature = BINARY_SIGNATURES[extname(name).toLowerCase()];
+    if (signature) {
+      if (!signature(data)) throw new InputError(`${name} does not look like a ${extname(name).slice(1).toUpperCase()} file.`);
+    } else {
+      if (data.includes(0)) throw new InputError('Only UTF-8 text files can be imported.');
+      try { new TextDecoder('utf-8', { fatal: true }).decode(data); } catch { throw new InputError('Only UTF-8 text files can be imported.'); }
+    }
     const id = randomUUID();
     const record: ImportedFile = { path: `data/uploads/${id}-${name}`, name, bytes: data.length, sha256: sha256(data), importedAt: new Date().toISOString() };
     file = await storagePath(root, record.path, true);

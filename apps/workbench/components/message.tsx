@@ -19,8 +19,8 @@ type ToolPart = { type: string; toolName?: string; toolCallId: string; state: st
 type PlanItem = { step: string; status: 'pending' | 'in_progress' | 'done' };
 type HelperOutput = { agent?: string; status?: 'working' | 'done'; steps?: number; tools?: string[]; text?: string };
 
-/** Answer a tool call that is waiting for approval. */
-export type ApproveHandler = (approvalId: string, approved: boolean) => void;
+/** Answer a tool call that is waiting for approval. `always` also stops this tool from asking again. */
+export type ApproveHandler = (approvalId: string, approved: boolean, always?: { toolName: string }) => void;
 
 const phase: Record<string, string> = {
   'input-streaming': 'Preparing', 'input-available': 'Running', 'output-available': 'Done',
@@ -135,6 +135,8 @@ function ToolCall({ part, onApprove }: { part: ToolPart; onApprove?: ApproveHand
               {onApprove ? (
                 <>
                   <Button size="xs" variant="outline" aria-label={`Deny ${name}`} onClick={() => onApprove(part.approval!.id, false)}>Deny</Button>
+                  <Button size="xs" variant="outline" aria-label={`Always allow ${name}`} title="Approve, and stop asking for this tool in this project"
+                    onClick={() => onApprove(part.approval!.id, true, { toolName: name })}>Always allow</Button>
                   <Button size="xs" aria-label={`Approve ${name}`} onClick={() => onApprove(part.approval!.id, true)}>Approve</Button>
                 </>
               ) : <span className="text-xs text-muted-foreground">Open this session to answer.</span>}

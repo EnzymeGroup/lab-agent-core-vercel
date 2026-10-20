@@ -5,6 +5,7 @@ import { defineAgent, limitsOf, readInstructions } from '../config/load.js';
 import { errorMessage } from '../errors.js';
 import { createSessionStore } from '../store/sessions.js';
 import { listProjectMcp, mergeMcpServers } from '../store/mcp.js';
+import { readToolSettings } from '../store/tools.js';
 import { createRunStore } from '../runs/store.js';
 import { createWorkspace, type Workspace } from '../workspace/workspace.js';
 import { getExecutionContext, type ExecutionContext } from '../workspace/context.js';
@@ -15,7 +16,8 @@ import { describeTools } from '../tools/describe.js';
 import { createOperationGate } from './gate.js';
 import { recoverInterrupted } from './recovery.js';
 import { boundContext, projectContext, systemInstructions } from './prompt.js';
-import { approvalMatcher, toolApproval } from './approval.js';
+import { approvalMatcher } from './approval.js';
+import { toolSwitches, type ToolSwitches } from './switches.js';
 import { injectSteering } from './steering.js';
 import { helperTools, subagentTool } from './subagent.js';
 import type { AgentConfig, Skill } from '../types.js';
@@ -43,7 +45,7 @@ const repairToolName: ToolCallRepairFunction<ToolSet> = async ({ toolCall, tools
   return toolName ? { ...toolCall, toolName } : null;
 };
 
-function createNativeAgent(config: AgentConfig, instructions: string, skills: readonly Skill[], tools: ToolSet, needsApproval: (name: string) => boolean) {
+function createNativeAgent(config: AgentConfig, instructions: string, skills: readonly Skill[], tools: ToolSet, switches: ToolSwitches) {
   const { maxSteps, maxContextChars, maxRetries } = limitsOf(config);
   return new ToolLoopAgent({
     model: config.model,
@@ -51,7 +53,9 @@ function createNativeAgent(config: AgentConfig, instructions: string, skills: re
     // A stable system prefix; Anthropic caches it (and the tool definitions before it).
     instructions: { role: 'system', content: systemInstructions(instructions, skills, config.fileAccess, config.memory !== false), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } },
     stopWhen: [isStepCount(maxSteps), () => getExecutionContext()?.overBudget?.() ?? false],
-    toolApproval: toolApproval(Object.keys(tools), needsApproval),
+    // Read at call time, so alwaysAllow applies from the next call. Disabled tools leave activeTools below;
+    // the SDK refuses a call to them before approval or execution.
+    toolApproval: ({ toolCall }) => switches.pauses(toolCall.toolName) ? 'user-approval' : 'not-applicable',
     repairToolCall: repairToolName,
     telemetry: config.telemetry,
     // Core bounds the context before and after the application's own prepareStep, and
@@ -61,8 +65,9 @@ function createNativeAgent(config: AgentConfig, instructions: string, skills: re
       const steered = injectSteering(context?.steering, options.messages);
       const bounded = projectContext(steered, maxContextChars, context?.clipped);
       const prepared = await config.prepareStep?.({ ...options, messages: bounded });
-      const activeTools = context?.mode && !pythonToolAllowed(config, context.mode)
-        ? (prepared?.activeTools ?? Object.keys(tools)).filter(name => name !== 'runPython')
+      const pythonOff = !!context?.mode && !pythonToolAllowed(config, context.mode);
+      const activeTools = pythonOff || switches.settings.disabled.length
+        ? (prepared?.activeTools ?? Object.keys(tools)).filter(name => switches.enabled(name) && !(pythonOff && name === 'runPython'))
         : prepared?.activeTools;
       const final = boundContext(prepared?.messages ?? bounded, maxContextChars, context?.clipped);
       context?.onContext?.(final.stats);
@@ -78,7 +83,7 @@ function createNativeAgent(config: AgentConfig, instructions: string, skills: re
 }
 
 /** Connect config MCP plus project HTTP MCP, then build the tool set and native agent on top. */
-async function connectTools(config: AgentConfig, workspace: Workspace, skills: readonly Skill[], instructions: string) {
+async function connectTools(config: AgentConfig, workspace: Workspace, skills: readonly Skill[], instructions: string, switches: ToolSwitches) {
   const servers = mergeMcpServers(config.mcp, await listProjectMcp(config.root));
   const mcp = await connectMcp(servers, { cwd: config.root, env: config.env });
   try {
@@ -88,10 +93,10 @@ async function connectTools(config: AgentConfig, workspace: Workspace, skills: r
       if (Object.hasOwn(tools, 'runSubagent')) throw new Error('Duplicate tool name: runSubagent');
       const rules = systemInstructions('', [], config.fileAccess);
       const maxBytes = config.limits?.maxToolOutputBytes ?? DEFAULT_MAX_TOOL_OUTPUT;
-      tools.runSubagent = guardTool(subagentTool(config, helperTools(config, tools, needsApproval), rules) as Tool, maxBytes);
+      tools.runSubagent = guardTool(subagentTool(config, helperTools(config, tools, needsApproval), rules, switches) as Tool, maxBytes);
     }
     const toolDetails = (await describeTools(tools)).map(detail => ({ ...detail, needsApproval: needsApproval(detail.name) }));
-    return { mcp, tools, toolDetails, needsApproval, native: createNativeAgent(config, instructions, skills, tools, needsApproval) };
+    return { mcp, tools, toolDetails, needsApproval, native: createNativeAgent(config, instructions, skills, tools, switches) };
   } catch (error) {
     await mcp.close();
     throw error;
@@ -113,9 +118,10 @@ export async function assembleAgent(input: AgentConfig) {
   const instructions = await readInstructions(config);
   const sessions = createSessionStore(root);
   const runs = createRunStore(config);
+  const switches = toolSwitches(await readToolSettings(root), approvalMatcher(config.approval));
   const res = {
-    config, root, workspace, skills, sessions, runs,
-    ...(await connectTools(config, workspace, skills, instructions)),
+    config, root, workspace, skills, sessions, runs, switches,
+    ...(await connectTools(config, workspace, skills, instructions, switches)),
     gate: createOperationGate(root),
     activeTurn: undefined as ActiveTurn | undefined,
     errorMessage: (error: unknown) => errorMessage(error, config.env),
@@ -123,7 +129,7 @@ export async function assembleAgent(input: AgentConfig) {
     recoverUnlocked: () => recoverInterrupted(config, sessions, runs),
     /** Reconnect MCP after project servers change and swap the tool set. Caller holds the lock. */
     async reloadTools(): Promise<void> {
-      const next = await connectTools(config, workspace, skills, instructions);
+      const next = await connectTools(config, workspace, skills, instructions, switches);
       const previous = res.mcp;
       Object.assign(res, next);
       // The new tool set is live; a failure closing old clients is not actionable.

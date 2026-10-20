@@ -83,7 +83,7 @@ export default function InputFiles({ token, busy, onUse }: { token: string; busy
         <ChevronRight className="ml-auto size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
       </summary>
       <section aria-label="Input files" className="space-y-3 px-4 pb-4 text-xs">
-        <p className="text-muted-foreground">Import a file into this project. Use for task inserts its path and binds it as a task input. Nothing is sent automatically.</p>
+        <p className="text-muted-foreground">Import a file into this project. Use for task inserts its path and binds it as a task input. Attach (images and PDFs) shows the file to the model with the next message. Nothing is sent automatically.</p>
         <div className="rounded-md border border-dashed p-3">
           <label htmlFor="input-file-picker" className="mb-1.5 block font-medium">Choose an input file</label>
           <input id="input-file-picker" ref={picker} type="file" accept={listing?.extensions.join(',')} disabled={!listing || busy || importing}
@@ -114,7 +114,9 @@ export default function InputFiles({ token, busy, onUse }: { token: string; busy
                 <code className="mt-1 block font-mono text-[11px] break-all text-muted-foreground" tabIndex={0}>{item.path}</code>
                 <div className="mt-2 flex gap-1.5">
                   <Button variant="outline" size="sm" className="h-7 flex-1" onClick={() => { void copy(item.path); }} aria-label={`Copy path for ${item.name}`}><Copy />Copy path</Button>
-                  <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Use ${item.name} in task`}>Use for task</Button>
+                  {/\.(?:png|jpe?g|gif|webp|pdf)$/iu.test(item.path)
+                    ? <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Attach ${item.name} to the next message`}>Attach</Button>
+                    : <Button variant="secondary" size="sm" className="h-7 flex-1" onClick={() => onUse(item.path)} disabled={busy || importing} aria-label={`Use ${item.name} in task`}>Use for task</Button>}
                 </div>
                 <details className="mt-2"><summary className="text-[11px] text-muted-foreground">SHA-256</summary><code className="mt-1 block font-mono text-[10px] break-all">{item.sha256}</code></details>
               </li>

@@ -518,6 +518,64 @@ test('project memory entries can be read and forgotten in capabilities', async (
   await expect(readFile(file)).rejects.toThrow();
 });
 
+test('always allow on an approval card, and per-tool switches in capabilities', async ({ page, request }) => {
+  const headers = { ...await authorized(request), 'Content-Type': 'application/json' };
+  // The finally block leaves the shared demo project as other tests expect it.
+  try {
+    await createSession(page);
+    await page.getByRole('radio', { name: 'Chat', exact: true }).check();
+    const box = page.getByRole('textbox', { name: 'Message to agent' });
+    await box.fill('[tool:recordNote] remember this');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await page.getByRole('button', { name: 'Always allow recordNote' }).click();
+    await expect(page.locator('.tool-call').filter({ hasText: 'recordNote' }).first()).toContainText('Done');
+    await waitIdle(request);
+
+    // The next call runs without pausing.
+    await box.fill('[tool:recordNote] and this');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(page.locator('.tool-call').filter({ hasText: 'recordNote' })).toHaveCount(2);
+    await expect(page.getByText('Waiting for your approval.')).toHaveCount(0);
+    await waitIdle(request);
+
+    await page.getByRole('button', { name: /^Open Tools/ }).click();
+    const item = page.getByRole('dialog', { name: 'Project capabilities' }).locator('li').filter({ hasText: 'recordNote' }).first();
+    await expect(item).toContainText('Always allowed');
+    await item.getByRole('checkbox', { name: 'Always allow recordNote' }).uncheck();
+    await expect(item).toContainText('Needs approval');
+    await item.getByRole('checkbox', { name: 'Enable recordNote' }).uncheck();
+    await expect(item).toContainText('Off');
+    await expect(item.getByRole('checkbox', { name: 'Enable recordNote' })).not.toBeChecked();
+  } finally {
+    await request.put('/api/tools', { headers, data: { name: 'recordNote', enabled: true, alwaysAllow: false } });
+  }
+});
+
+test('an imported image is attached to the next message', async ({ page, request }) => {
+  const turns: Array<{ attachments?: string[] }> = [];
+  page.on('request', message => { if (message.url().endsWith('/api/chat') && message.method() === 'POST') turns.push(message.postDataJSON()); });
+  await createSession(page);
+  await page.getByRole('radio', { name: 'Chat', exact: true }).check();
+  await page.locator('.input-files > summary').click();
+  const inputs = page.getByRole('region', { name: 'Input files', exact: true });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+  const name = `figure-${Date.now()}.png`;
+  await inputs.getByLabel('Choose an input file').setInputFiles({ name, mimeType: 'image/png', buffer: png });
+  await inputs.getByRole('button', { name: 'Import file', exact: true }).click();
+  await expect(inputs.getByRole('status')).toContainText(`Imported ${name}`);
+  await inputs.getByRole('button', { name: `Attach ${name} to the next message` }).click();
+
+  const chips = page.getByRole('list', { name: 'Attachments' });
+  await expect(chips).toContainText(name);
+  await page.getByRole('textbox', { name: 'Message to agent' }).fill('[chat-only] what does the figure show');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(chips).toHaveCount(0);
+  // Uploads are stored as data/uploads/<uuid>-<name>; the saved message names that file.
+  await expect(page.locator('.message-user').last()).toContainText(new RegExp(`Attachment: \\S*${name.replace('.', '\\.')}`));
+  await waitIdle(request);
+  expect(turns.at(-1)?.attachments?.[0]).toMatch(new RegExp(`^data/uploads/.+-${name.replace('.', '\\.')}$`));
+});
+
 for (const width of [375, 768, 1024, 1440]) {
   test(`workbench is usable at ${width}px without horizontal overflow`, async ({ page }, testInfo) => {
     const errors: string[] = [];

@@ -1,5 +1,6 @@
 import type { ModelMessage } from 'ai';
 import { MEMORY_RULES } from '../tools/memory.js';
+import { contextChars } from './attachments.js';
 import type { AgentConfig, ContextStats, FileHash, Skill } from '../types.js';
 
 /** Everything Core adds to the model's view: system rules, task note, bounded context. */
@@ -68,14 +69,14 @@ export function boundContext(messages: ModelMessage[], maxChars: number, clips?:
       }),
     };
   });
-  let chars = JSON.stringify(clipped).length;
+  let chars = contextChars(clipped);
   let droppedMessages = 0;
   while (chars > maxChars) {
     const nextUser = clipped.findIndex((message, index) => index > 0 && message.role === 'user');
     if (nextUser < 0) throw new Error('Current turn exceeds the configured context budget. Start a new session or reduce tool output.');
     clipped.splice(0, nextUser);
     droppedMessages += nextUser;
-    chars = JSON.stringify(clipped).length;
+    chars = contextChars(clipped);
   }
   return { messages: clipped, stats: { chars, maxChars, droppedMessages, clippedResults } };
 }

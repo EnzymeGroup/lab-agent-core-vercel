@@ -101,6 +101,7 @@ function render(messages: ModelMessage[]): string {
       if (part.type === 'text') return `${message.role}: ${clip(part.text)}`;
       if (part.type === 'tool-call') return `tool call ${part.toolName}: ${clip(part.input)}`;
       if (part.type === 'tool-result') return `tool result ${part.toolName}: ${clip(part.output)}`;
+      if (part.type === 'file') return `${message.role}: [attached ${part.filename ?? part.mediaType}]`;
       return '';
     }).filter(Boolean).join('\n');
   });

@@ -216,11 +216,17 @@ export interface SkillFingerprint extends FileHash { name: string; loaded: boole
 export interface RunProvenance {
   coreVersion: string;
   aiSdkVersion: string;
+  /** Host versions when the task started. python: the configured interpreter's --version output. */
+  environment?: { node: string; platform: string; arch: string; python?: string; conda?: string };
   inputs: FileHash[];
   inputSelection?: { source: 'turn' | 'config' | 'default'; paths: string[] };
   skills?: SkillFingerprint[];
   /** Memory entries listed in the model's index when the task started. */
   memory?: { name: string; sha256: string; updatedAt: string }[];
+  /** Images and PDFs attached to the task message. */
+  attachments?: FileHash[];
+  /** Project tool switches in effect when the task started, when any are set. */
+  toolSettings?: { disabled: string[]; alwaysAllow: string[] };
   code: FileHash[];
   configHash: string;
   validationHash: string;
@@ -297,6 +303,8 @@ export interface TurnInput {
   model?: string;
   /** Task-only: project paths frozen as this run's inputs. [] means none. */
   inputs?: string[];
+  /** Images or PDFs (project paths) shown to the model with this message. Provider support varies. */
+  attachments?: string[];
   workflowId?: string;
   parentRunId?: string;
   signal?: AbortSignal;

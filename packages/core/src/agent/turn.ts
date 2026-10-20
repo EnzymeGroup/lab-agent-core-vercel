@@ -9,7 +9,8 @@ import { validInputList } from '../runs/provenance.js';
 import { snapshotSkills } from '../tools/skills.js';
 import { memoryIndexNote } from '../tools/memory.js';
 import { listMemory } from '../store/memory.js';
-import { sha256 } from '../store/hash.js';
+import { hashFile, sha256 } from '../store/hash.js';
+import { attachedPaths, attachmentParts, inlineAttachments } from './attachments.js';
 import { runWithExecutionContext, type ExecutionContext } from '../workspace/context.js';
 import { appendToLastUserMessage, taskDeliveryNote } from './prompt.js';
 import { compactSession, needsCompaction, summaryMessage, unsummarized } from './compact.js';
@@ -97,6 +98,8 @@ async function openRun(res: AgentResources, request: TurnInput, sessionId: strin
   if (res.config.memory !== false) {
     run.provenance!.memory = (await listMemory(res.root)).entries.map(entry => ({ name: entry.name, sha256: sha256(entry.content), updatedAt: entry.updatedAt }));
   }
+  const { disabled, alwaysAllow } = res.switches.settings;
+  if (disabled.length || alwaysAllow.length) run.provenance!.toolSettings = { disabled: [...disabled], alwaysAllow: [...alwaysAllow] };
   await res.runs.save(run);
   return run;
 }
@@ -165,7 +168,8 @@ async function startModelStream(res: AgentResources, session: SessionRecord, con
   let result;
   const summary = summaryMessage(session);
   try {
-    const messages = [...summary, ...await convertToModelMessages(unsummarized(session), { tools: res.tools, ignoreIncompleteToolCalls: true })];
+    const visible = await inlineAttachments(res.workspace, unsummarized(session));
+    const messages = [...summary, ...await convertToModelMessages(visible, { tools: res.tools, ignoreIncompleteToolCalls: true })];
     if (run) {
       const output = relative(res.root, context.outputDirectory!).split('\\').join('/');
       appendToLastUserMessage(messages, taskDeliveryNote(output, run.provenance!.inputs));
@@ -322,8 +326,13 @@ export async function streamTurn(res: AgentResources, request: TurnInput): Promi
     await res.recoverUnlocked();
     session = await openSession(res, request);
     const selected = chooseModel(res, session, request.model);
+    const files = await attachmentParts(res.workspace, request.attachments);
     if (mode === 'task') run = await openRun(res, request, session.id, selected, inputs);
-    session.messages.push({ id: request.messageId ? opaqueId(request.messageId) : randomUUID(), role: 'user', parts: [{ type: 'text', text: request.message }] });
+    if (run && files.length) {
+      run.provenance!.attachments = await Promise.all(attachedPaths([{ id: '', role: 'user', parts: files }]).map(path => hashFile(res.root, path)));
+      await res.runs.save(run);
+    }
+    session.messages.push({ id: request.messageId ? opaqueId(request.messageId) : randomUUID(), role: 'user', parts: [{ type: 'text', text: request.message }, ...files] });
     session.state = 'running';
     delete session.error;
     session.activeRunId = run?.id;

@@ -10,6 +10,7 @@ import { respondTurn, steerTurn, streamTurn, type RespondInput } from './turn.js
 import { pendingApprovals } from './approval.js';
 import { compactionPolicy, compactSession } from './compact.js';
 import { helperTools } from './subagent.js';
+import { updateToolSwitch } from './switches.js';
 import { forgetMemory, listMemory, readMemory } from '../store/memory.js';
 import { addSessionUsage, addStep, type Totals } from './steps.js';
 import type { AgentConfig, ApprovalDecision, RunRecord, SessionRecord, TurnInput, TurnResult, TurnStream } from '../types.js';
@@ -28,6 +29,7 @@ import type { AgentConfig, ApprovalDecision, RunRecord, SessionRecord, TurnInput
  *   skills.read  full SKILL.md text (viewing never marks a Skill as used)
  *   mcp.*        list, test, add and remove project HTTP MCP servers
  *   memory.*     list, read and forget project memory entries
+ *   tools.*      per-project switches: disable a tool, or always allow one that needs approval
  *   cancel/close stop the active operation / shut down
  *   native       the underlying ToolLoopAgent (bypasses sessions, runs and checks)
  */
@@ -136,7 +138,12 @@ export async function createAgent(input: AgentConfig) {
       memory: config.memory === false ? false : memory.entries.map(({ content: _content, ...entry }) => entry),
       skills: res.skills,
       tools: Object.keys(res.tools).sort(),
-      toolDetails: res.toolDetails,
+      toolDetails: res.toolDetails.map(detail => ({
+        ...detail,
+        enabled: res.switches.enabled(detail.name),
+        alwaysAllow: detail.needsApproval && !res.switches.pauses(detail.name),
+      })),
+      toolSettings: res.switches.settings,
       mcp: mcp.servers,
       fileAccess: config.fileAccess ?? { mode: 'analysis' as const },
       pythonScripts: Object.entries(config.python?.scripts ?? {}).map(([name, script]) => ({ name, description: script.description, modes: script.modes ?? ['chat', 'task'] })),
@@ -166,6 +173,11 @@ export async function createAgent(input: AgentConfig) {
       list: async () => (await listMemory(root)).entries,
       read: (name: string) => readMemory(root, name),
       forget: (name: string) => forgetMemory(root, name),
+    },
+    tools: {
+      settings: () => res.switches.settings,
+      /** { name, enabled?, alwaysAllow? }; applies from the next model step. */
+      update: (change: unknown) => updateToolSwitch(res, change),
     },
     streamTurn: (request: TurnInput) => streamTurn(res, request),
     respond: (input: RespondInput) => respondTurn(res, input),

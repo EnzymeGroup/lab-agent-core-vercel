@@ -24,6 +24,9 @@ interface Props {
   onBoundInputsChange(update: (previous: string[]) => string[]): void;
   bindingError: string;
   onBindingError(message: string): void;
+  /** Images and PDFs shown to the model with the next message (chat or task). */
+  attachments: string[];
+  onRemoveAttachment(path: string): void;
   /** Number of registered Python scripts allowed in chat, when the server reports it. */
   chatScripts?: number;
   blocked: boolean;
@@ -172,6 +175,18 @@ export default function Composer(props: Props) {
             {boundInputs.length > 0 && ' Task input bindings are retained for Task mode and omitted from Chat.'}
           </p>
         )}
+      {props.attachments.length > 0 && (
+        <ul className="message-attachments flex flex-wrap gap-1.5 border-b px-3 py-2" aria-label="Attachments">
+          {props.attachments.map(path => (
+            <li key={path} className="flex max-w-full items-center gap-1 rounded-md border bg-muted px-2 py-0.5 text-[11px]">
+              <Paperclip className="size-3 shrink-0 text-muted-foreground" />
+              <code className="min-w-0 truncate font-mono">{path.split('/').at(-1)}</code>
+              <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground" aria-label={`Remove attachment ${path}`}
+                onClick={() => props.onRemoveAttachment(path)} disabled={blocked}><X className="size-3" /></button>
+            </li>
+          ))}
+        </ul>
+      )}
       <label htmlFor="message-input" className="sr-only">Message to agent</label>
       <textarea id="message-input" ref={props.textarea} value={input} rows={3} disabled={blocked} aria-describedby="composer-help"
         onChange={event => props.onInputChange(event.target.value)} onKeyDown={onKey}

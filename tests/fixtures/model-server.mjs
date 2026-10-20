@@ -80,20 +80,24 @@ export async function startModelServer(options = {}) {
         }
       }
       const results = turn.filter(m => m.role === 'tool');
-      const next = plan[results.length];
-      const toolCall = next ? { id: `call_${results.length + 1}`, type: 'function', function: { name: next.name, arguments: JSON.stringify(next.args ?? {}) } } : undefined;
+      // One plan entry per step; an array entry asks for several tool calls in the same step.
+      const step = turn.filter(m => m.role === 'assistant' && m.tool_calls?.length).length;
+      const next = plan[step];
+      const calls = next === undefined ? [] : Array.isArray(next) ? next : [next];
+      const toolCalls = calls.map((call, index) => ({ id: `call_${results.length + index + 1}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) } }));
+      const toolCall = toolCalls[0];
       const text = next ? undefined : (options.text ?? `Deterministic demo finished. ${results.length} real tool call(s) completed; inspect the artifact and independent check report. This response is a local fixture, not live model inference.`);
       const id = `chatcmpl-fixture-${requests.length}`;
       const base = { id, object: 'chat.completion', created: 1_700_000_000, model: input.model };
       if (!input.stream) {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ...base, choices: [{ index: 0, message: { role: 'assistant', content: text ?? null, ...(toolCall ? { tool_calls: [toolCall] } : {}) }, finish_reason: toolCall ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 } }));
+        res.end(JSON.stringify({ ...base, choices: [{ index: 0, message: { role: 'assistant', content: text ?? null, ...(toolCall ? { tool_calls: toolCalls } : {}) }, finish_reason: toolCall ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 } }));
         return;
       }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       const event = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ ...base, object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
       event({ role: 'assistant', content: '' });
-      if (toolCall) event({ tool_calls: [{ index: 0, ...toolCall }] });
+      if (toolCall) event({ tool_calls: toolCalls.map((call, index) => ({ index, ...call })) });
       else for (const piece of text.match(/.{1,32}/gs) ?? []) event({ content: piece });
       event({}, toolCall ? 'tool_calls' : 'stop');
       res.write(`data: ${JSON.stringify({ ...base, object: 'chat.completion.chunk', choices: [], usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 } })}\n\n`);

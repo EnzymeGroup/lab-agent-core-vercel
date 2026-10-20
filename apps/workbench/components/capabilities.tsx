@@ -2,10 +2,11 @@
 
 import { useEffect } from 'react';
 import { Bot, Brain, ChevronRight, Cpu, Plug, Sparkles, Terminal, Wrench } from 'lucide-react';
-import { formatCost, type AgentState } from '../lib/api';
+import { formatCost, type AgentState, type ToolDetail } from '../lib/api';
 import McpServers from './mcp-servers';
 import Memory from './memory';
 import Skills from './skills';
+import ToolSwitches from './tool-switches';
 import { Badge } from './ui/badge';
 import { Dialog } from './ui/dialog';
 
@@ -38,7 +39,7 @@ const itemClass = 'rounded-md border p-3 text-xs';
 const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
 
 export default function Capabilities({ token, state, section, onChanged, onClose }: { token: string; state: AgentState; section?: CapabilitySection; onChanged(): Promise<unknown>; onClose(): void }) {
-  const tools = state.toolDetails ?? state.tools.map(name => ({ name, description: '', inputSchema: undefined as unknown, needsApproval: false }));
+  const tools: ToolDetail[] = state.toolDetails ?? state.tools.map(name => ({ name, description: '', inputSchema: undefined, needsApproval: false }));
   const models = state.models ?? [{ key: 'default', ...state.model, default: true }];
   const access = state.fileAccess;
   const subagents = state.subagents ?? [];
@@ -111,9 +112,12 @@ export default function Capabilities({ token, state, section, onChanged, onClose
                 <li key={tool.name} className={itemClass}>
                   <div className="flex items-center gap-2">
                     <strong className="font-medium"><code className="font-mono">{tool.name}</code></strong>
-                    {tool.needsApproval && <Badge tone="warning">Needs approval</Badge>}
+                    {tool.needsApproval && !tool.alwaysAllow && <Badge tone="warning">Needs approval</Badge>}
+                    {tool.alwaysAllow && <Badge>Always allowed</Badge>}
+                    {tool.enabled === false && <Badge tone="danger">Off</Badge>}
                   </div>
                   <p className="mt-1 text-muted-foreground">{tool.description || 'Description not reported by this server.'}</p>
+                  <ToolSwitches token={token} tool={tool} busy={state.busy} onChanged={onChanged} />
                   <details className="group mt-2">
                     <summary className="flex items-center gap-1 text-muted-foreground hover:text-foreground"><ChevronRight className="size-3 transition-transform group-open:rotate-90" />Input schema for {tool.name}</summary>
                     <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-2.5 font-mono text-[11px]">{tool.inputSchema === undefined ? 'Schema not reported by this server.' : JSON.stringify(tool.inputSchema, null, 2)}</pre>

@@ -5,6 +5,7 @@ import { InputError } from '../errors.js';
 import { modelInfo } from '../config/models.js';
 import { ifExists, projectPath, storagePath, within } from '../store/files.js';
 import { hashFile, sha256 } from '../store/hash.js';
+import { runCommand } from '../workspace/process.js';
 import type { AgentConfig, FileHash, RunProvenance } from '../types.js';
 
 /**
@@ -108,12 +109,32 @@ async function packageVersion(file: string | URL): Promise<string> {
   return JSON.parse(await readFile(file, 'utf8')).version;
 }
 
+/**
+ * The host the task ran on: Node, platform, the configured Python's version and the active
+ * conda environment name. A Python that cannot report its version is recorded as unavailable.
+ */
+async function hostEnvironment(config: AgentConfig): Promise<NonNullable<RunProvenance['environment']>> {
+  const env = config.env ?? process.env;
+  const environment: NonNullable<RunProvenance['environment']> = { node: process.versions.node, platform: process.platform, arch: process.arch };
+  if (config.python) {
+    try {
+      const result = await runCommand(config.python.command ?? 'python3', [...(config.python.args ?? []), '--version'], { cwd: config.root, env, timeoutMs: 5000, maxOutputBytes: 4096 });
+      environment.python = result.code === 0 ? (result.stdout || result.stderr).trim().slice(0, 200) : 'unavailable';
+    } catch {
+      environment.python = 'unavailable';
+    }
+  }
+  if (env.CONDA_DEFAULT_ENV) environment.conda = env.CONDA_DEFAULT_ENV.slice(0, 200);
+  return environment;
+}
+
 export async function createProvenance(config: AgentConfig, inputs?: string[]): Promise<RunProvenance> {
   const code = await hashCode(config);
   const source = inputs !== undefined ? 'turn' : config.provenance?.inputs !== undefined ? 'config' : 'default';
   return {
     coreVersion: await packageVersion(new URL('../../package.json', import.meta.url)),
     aiSdkVersion: await packageVersion(resolve(dirname(require.resolve('ai')), '../package.json')),
+    environment: await hostEnvironment(config),
     inputs: await hashInputs(config, inputs),
     inputSelection: { source, paths: inputs ?? config.provenance?.inputs ?? ['data'] },
     code,

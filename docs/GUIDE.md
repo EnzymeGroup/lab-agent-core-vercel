@@ -168,6 +168,12 @@ approval: ['writeFile', 'mcp_*'],
 
 When the model calls one, the turn pauses and the workbench shows **Approve** and **Deny** on that call. Nothing runs until you answer; the same reply then continues. From the CLI, `lab-agent run` exits 3 and prints the command to continue: `lab-agent approve --session ID [--deny]`. In code, `agent.approve(sessionId, true)`.
 
+**Always allow** on the card approves the call and stops that tool asking again in this project. Capabilities → Tools has two switches per tool: **Enabled** (off hides the tool from the model; a call to it is refused) and, for tools in `approval`, **Always allow**. They are saved in `.lab-agent/tools.json`, work from the next step, and each task records the switches it ran with. In code: `agent.tools.update({ name: 'writeFile', alwaysAllow: true })`. `approval` in the config stays the ceiling: a switch can turn a tool off or skip its pause, never add a tool.
+
+### Images and PDFs
+
+Import a `.png`, `.jpg`, `.gif`, `.webp` or `.pdf` under Input files and press **Attach**; it is shown to the model with your next message, in Chat or Task mode. From the CLI: `lab-agent run "describe the figure" --attach data/figure.png`. In code: `agent.chat('…', { attachments: ['data/figure.png'] })`. History keeps only the path, and the bytes are read through the file policy each time. Whether the model can read images or PDFs depends on the model and provider; one that cannot will return a provider error.
+
 ### Search
 
 `findFiles` finds files by glob (`**/*.csv`) and `searchFiles` greps contents with a regular expression, both recursively and through the same file policy as `readFile`: secrets, `.lab-agent/` and paths outside `readRoots` never show up. They need no `rg` binary.

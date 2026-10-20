@@ -18,11 +18,6 @@ export function approvalMatcher(patterns: readonly string[] = []): (name: string
   return name => patterns.some(pattern => pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern);
 }
 
-/** Native toolApproval config for every tool that matches. */
-export function toolApproval(names: readonly string[], needsApproval: (name: string) => boolean): Record<string, 'user-approval'> {
-  return Object.fromEntries(names.filter(needsApproval).map(name => [name, 'user-approval' as const]));
-}
-
 /** Tool calls in the last assistant message that still wait for a decision. */
 export function pendingApprovals(session: SessionRecord): PendingApproval[] {
   const last = session.messages.at(-1);

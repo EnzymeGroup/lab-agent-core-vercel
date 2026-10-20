@@ -50,6 +50,7 @@ const chatSchema = z.object({
   workflowId: z.string().optional(),
   parentRunId: z.string().optional(),
   inputs: z.array(z.string().min(1)).max(256).optional(),
+  attachments: z.array(z.string().min(1)).max(8).optional(),
   messages: z.array(z.object({
     id: z.string(), role: z.string(),
     parts: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()),
@@ -82,6 +83,7 @@ function apiRoutes(agent: LabAgent, demo: boolean): Record<string, Route> {
         turn = await agent.streamTurn({
           sessionId: input.sessionId, messageId: last.id, message: last.parts.map(part => part.text ?? '').join('\n'),
           mode: input.mode, model: input.model, workflowId: input.workflowId, parentRunId: input.parentRunId, inputs: input.inputs,
+          attachments: input.attachments,
         });
       }
       return createUIMessageStreamResponse({ stream: turn.stream, headers: { 'x-lab-session-id': turn.sessionId, ...(turn.runId ? { 'x-lab-run-id': turn.runId } : {}) } });
@@ -100,6 +102,7 @@ function apiRoutes(agent: LabAgent, demo: boolean): Record<string, Route> {
     'POST /api/mcp/test': async request => json(await agent.mcp.test(await readJson(request))),
     'POST /api/mcp': async request => json(await agent.mcp.add(await readJson(request)), 201),
     'DELETE /api/mcp': async (_, url) => json(await agent.mcp.remove(param(url, 'name'))),
+    'PUT /api/tools': async request => json(await agent.tools.update(await readJson(request))),
     'GET /api/memory': async (_, url) => json(await agent.memory.read(param(url, 'name'))),
     'DELETE /api/memory': async (_, url) => {
       await agent.memory.forget(param(url, 'name'));

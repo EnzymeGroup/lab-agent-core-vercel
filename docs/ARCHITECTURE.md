@@ -60,6 +60,8 @@ A browsable version with the turn sequence and storage layout is in [architectur
 | `agent/prompt.ts` | System rules, task delivery note, bounded context projection |
 | `agent/recovery.ts` | Mark interrupted work after a crash (paused approvals are left alone) |
 | `agent/approval.ts` | Approval matcher, pending calls, applying decisions to stored parts |
+| `agent/switches.ts` | Project tool switches (disabled, alwaysAllow) read at call time; `updateToolSwitch` under the lock |
+| `agent/attachments.ts` | Image/PDF attachment parts (`project:` references), inlining per model call, context size without file bytes |
 | `agent/steering.ts` | Steering queue: prepareStep injection, `data-steer` announcements, splitting into user messages |
 | `agent/compact.ts` | When to summarize, writing `session.summary`, the summarized model view |
 | `agent/subagent.ts` | `runSubagent`: helper tool sets and a native `ToolLoopAgent` per call |
@@ -84,6 +86,7 @@ A browsable version with the turn sequence and storage layout is in [architectur
 | `store/sessions.ts` | Session records |
 | `store/memory.ts` | `.lab-agent/memory/<name>.md` entries: parse, list, save, forget |
 | `store/mcp.ts` | `.lab-agent/mcp.json` and merging with config MCP |
+| `store/tools.ts` | `.lab-agent/tools.json` tool switches |
 | `runs/store.ts` | Run records, artifact listing, check report schema |
 | `runs/provenance.ts` | Streaming SHA-256, input freezing, change detection |
 | `runs/check.ts` | Preflight → checker → final integrity; interrupted checks |
@@ -104,10 +107,10 @@ Workbench (`apps/workbench`, Next.js static export, Tailwind CSS v4, shadcn-styl
 | `components/brand.tsx` | Monochrome monogram from `ui.title` (mobile header) |
 | `components/sidebar.tsx` | Sessions, project, input files, capabilities entry |
 | `components/conversation.tsx` | `useChat` transport (new turns and approval responses), history restore, cancel, steering, plan panel, compaction |
-| `components/composer.tsx` | Message box, Task/Chat switch, model picker, context meter with Compact, task input bindings, send-to-running-turn |
-| `components/message.tsx`, `markdown.tsx` | Messages, agent step timeline (tool calls, reasoning), Approve/Deny, plan checklist, helper answers, steering and repair notes, safe Markdown |
+| `components/composer.tsx` | Message box, Task/Chat switch, model picker, context meter with Compact, task input bindings, attachment chips, send-to-running-turn |
+| `components/message.tsx`, `markdown.tsx` | Messages, agent step timeline (tool calls, reasoning), Approve/Always allow/Deny, plan checklist, helper answers, steering and repair notes, safe Markdown |
 | `components/run-panel.tsx`, `run-evidence.tsx`, `status.tsx` | Runs, Execute → Check → Deliver progress, model calls, cost, repairs, checks, outputs, provenance |
-| `components/capabilities.tsx`, `skills.tsx`, `memory.tsx`, `mcp-servers.tsx` | Models, limits and prices, expandable Skills, project memory (read, forget), tools and approval, helpers and compaction, MCP add/test/remove |
+| `components/capabilities.tsx`, `skills.tsx`, `memory.tsx`, `tool-switches.tsx`, `mcp-servers.tsx` | Models, limits and prices, expandable Skills, project memory (read, forget), tools with Enabled/Always allow switches, helpers and compaction, MCP add/test/remove |
 | `components/artifact-preview.tsx`, `input-files.tsx` | Preview dialog and uploads |
 | `components/ui/*` | Button, Badge, Dialog primitives |
 | `lib/api.ts`, `lib/branding.ts` | Authenticated API calls; applying `ui` config |
@@ -138,6 +141,7 @@ Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-ass
 | `tests/files.test.mjs` | Upload and preview boundaries |
 | `tests/workbench-features.test.mjs`, `fixtures/mcp-http-server.mjs` | Model choice, context metadata, Skill reading, project HTTP MCP |
 | `tests/memory-search.test.mjs` | `findFiles`/`searchFiles` policy and limits; memory save, index, provenance, routes, `memory: false`, helpers |
+| `tests/core-upgrades.test.mjs` | Tool switches, parallel helpers, image/PDF attachments and uploads, environment provenance |
 | `tests/harness.test.mjs` | Approval, retries, tool-name repair, compaction, `readToolOutput`, repair loop, helpers, plan, steering, telemetry and budgets, evals, HTTP routes |
 | `tests/onboarding.test.mjs`, `consumers/installed.test.mjs` | Templates and the packed tarball outside the repo |
 | `tests/tui.test.mjs`, `browser.spec.ts` | Terminal UI and the workbench in Chromium |

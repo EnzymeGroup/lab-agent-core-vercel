@@ -37,10 +37,13 @@ const observationSchema = z.object({
 
 const provenanceSchema = z.object({
   coreVersion: z.string(), aiSdkVersion: z.string(),
+  environment: z.object({ node: z.string(), platform: z.string(), arch: z.string(), python: z.string().optional(), conda: z.string().optional() }).optional(),
   inputs: z.array(fileHashSchema), code: z.array(fileHashSchema), artifacts: z.array(fileHashSchema),
   inputSelection: z.object({ source: z.enum(['turn', 'config', 'default']), paths: z.array(z.string()) }).optional(),
   skills: z.array(fileHashSchema.extend({ name: z.string(), loaded: z.boolean(), loadedAt: z.iso.datetime().optional() })).optional(),
   memory: z.array(z.object({ name: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/u), updatedAt: z.iso.datetime() })).optional(),
+  attachments: z.array(fileHashSchema).optional(),
+  toolSettings: z.object({ disabled: z.array(z.string()), alwaysAllow: z.array(z.string()) }).optional(),
   configHash: z.string(), validationHash: z.string(),
 });
 

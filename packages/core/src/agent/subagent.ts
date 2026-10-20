@@ -41,7 +41,7 @@ export function helperTools(config: AgentConfig, tools: ToolSet, needsApproval: 
   return result;
 }
 
-export function subagentTool(config: AgentConfig, tools: Record<string, ToolSet>, rules: string) {
+export function subagentTool(config: AgentConfig, tools: Record<string, ToolSet>, rules: string, switches: { enabled(name: string): boolean }) {
   const helpers = config.subagents ?? {};
   const names = Object.keys(helpers) as [string, ...string[]];
   const catalog = names.map(name => `- ${name}: ${helpers[name].description}`).join('\n');
@@ -53,10 +53,9 @@ export function subagentTool(config: AgentConfig, tools: Record<string, ToolSet>
       const helper = helpers[agent];
       const context = getExecutionContext();
       const selected = helper.model ? selectModel(config, helper.model) : { key: context?.modelKey ?? 'default', model: context?.model ?? config.model };
-      const available = Object.keys(tools[agent]).filter(name => name !== 'runPython' || !context?.mode || pythonToolAllowed(config, context.mode));
+      const available = Object.keys(tools[agent]).filter(name => switches.enabled(name) && (name !== 'runPython' || !context?.mode || pythonToolAllowed(config, context.mode)));
       const native = new ToolLoopAgent({
-        model: selected.model, tools: tools[agent], maxRetries, telemetry: config.telemetry,
-        instructions: `${helper.instructions}\n\n${rules}`,
+        model: selected.model, tools: tools[agent], maxRetries, telemetry: config.telemetry,        instructions: `${helper.instructions}\n\n${rules}`,
         stopWhen: [isStepCount(helper.maxSteps ?? DEFAULT_HELPER_STEPS), () => context?.overBudget?.() ?? false],
         prepareStep: ({ messages }) => ({ activeTools: available, messages: projectContext(messages, maxContextChars, context?.clipped) }),
       });

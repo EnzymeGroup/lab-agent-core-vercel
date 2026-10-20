@@ -38,6 +38,8 @@ export interface ArtifactPreview {
   mediaType?: string;
 }
 export interface MemoryEntry { name: string; description: string; type: 'user' | 'feedback' | 'project' | 'reference'; updatedAt: string }
+/** enabled and alwaysAllow come from the project's tool switches (.lab-agent/tools.json). */
+export interface ToolDetail { name: string; description: string; inputSchema: unknown; needsApproval?: boolean; enabled?: boolean; alwaysAllow?: boolean }
 export interface AgentState {
   project: string;
   busy: boolean;
@@ -52,7 +54,8 @@ export interface AgentState {
   memory?: MemoryEntry[] | false;
   skills: Skill[];
   tools: string[];
-  toolDetails?: Array<{ name: string; description: string; inputSchema: unknown; needsApproval?: boolean }>;
+  toolDetails?: ToolDetail[];
+  toolSettings?: { disabled: string[]; alwaysAllow: string[] };
   pythonScripts?: Array<{ name: string; description: string; modes: Array<'chat' | 'task'> }>;
   mcp?: McpServer[];
   fileAccess?: { mode?: 'analysis' | 'development'; readRoots?: string[]; writeRoots?: string[] };

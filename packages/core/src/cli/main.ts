@@ -18,6 +18,7 @@ const help = `lab-agent — build and run AI SDK agents with persistent sessions
   dev | serve [--port N]            Open the local browser workbench (default port 8787)
   chat [--session ID]               Interactive terminal UI
   run <task> [--input PATH]         Run a task; repeat --input to freeze its inputs
+      [--attach FILE]               Show an image or PDF to the model (repeatable)
   approve --session ID [--deny]     Answer the tool calls a paused turn waits for, then continue it
   eval [FILE] [--repeat N]          Run evals.json cases and grade them with the checker
   check <run-id|runs/path>          Recheck a run's outputs without calling the model
@@ -27,7 +28,7 @@ const help = `lab-agent — build and run AI SDK agents with persistent sessions
   doctor [--probe-model]            Check Node, Python and MCP; --probe-model sends one request
   recover                           Mark interrupted work after a crash; never replays tools
 
-Options: --root DIR --config FILE --json --session ID --port N --template NAME --reason TEXT --forget --help
+Options: --root DIR --config FILE --json --session ID --port N --template NAME --reason TEXT --forget --attach FILE --help
 Config and registered scripts are trusted project code. The server binds to 127.0.0.1.
 `;
 
@@ -47,7 +48,7 @@ function parseCli(args: string[]) {
       help: { type: 'boolean', default: false }, template: { type: 'string', default: 'python' },
       'probe-model': { type: 'boolean', default: false }, input: { type: 'string', multiple: true },
       deny: { type: 'boolean', default: false }, reason: { type: 'string' }, repeat: { type: 'string' },
-      forget: { type: 'boolean', default: false },
+      forget: { type: 'boolean', default: false }, attach: { type: 'string', multiple: true },
     },
   });
 }
@@ -95,6 +96,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (!PROJECT_COMMANDS.has(command)) throw new Error(`Unknown command: ${command}`);
     if (values['probe-model'] && command !== 'doctor') throw new Error('--probe-model is only valid for doctor.');
     if (values.input && command !== 'run') throw new Error('--input is only valid for run.');
+    if (values.attach && command !== 'run') throw new Error('--attach is only valid for run.');
     if ((values.deny || values.reason) && command !== 'approve') throw new Error('--deny and --reason are only valid for approve.');
     if (values.repeat && command !== 'eval') throw new Error('--repeat is only valid for eval.');
     if (values.forget && command !== 'memory') throw new Error('--forget is only valid for memory.');
@@ -140,8 +142,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
 
     agent = await createAgent(config);
     if (command === 'run') {
-      if (!rest.length) throw new Error('Usage: lab-agent run <task> [--session ID] [--input PATH]');
-      const run = await agent.runTask(rest.join(' '), { sessionId: values.session, inputs: values.input });
+      if (!rest.length) throw new Error('Usage: lab-agent run <task> [--session ID] [--input PATH] [--attach IMAGE_OR_PDF]');
+      const run = await agent.runTask(rest.join(' '), { sessionId: values.session, inputs: values.input, attachments: values.attach });
       print(run);
       if (run.execution === 'awaiting_approval') {
         if (!jsonOutput) process.stderr.write(`Paused for tool approval. Continue with: lab-agent approve --session ${run.session.id} [--deny]\n`);

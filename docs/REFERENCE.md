@@ -44,7 +44,7 @@ export default defineAgent(({ root, env }) => config) // factory; env = project 
 
 | Member | Behavior |
 | --- | --- |
-| `streamTurn({ message, sessionId?, messageId?, mode?, model?, inputs?, workflowId?, parentRunId?, signal? })` | → `{ sessionId, runId?, stream, completed, cancel }`. `stream` is a native `UIMessageChunk` stream; Core persists its own copy, so dropping the reader never stops accepted work. `mode` defaults to `chat`; `inputs` is task-only. `model` (`default` or a `models` key) becomes the session's model; omitted keeps the session's choice. Assistant messages carry `metadata: { model, context, usage, notice? }`. |
+| `streamTurn({ message, sessionId?, messageId?, mode?, model?, inputs?, attachments?, workflowId?, parentRunId?, signal? })` | → `{ sessionId, runId?, stream, completed, cancel }`. `stream` is a native `UIMessageChunk` stream; Core persists its own copy, so dropping the reader never stops accepted work. `mode` defaults to `chat`; `inputs` is task-only. `attachments` (≤8 project paths, `.png .jpg .jpeg .gif .webp .pdf`, ≤10 MiB each) are shown to the model with this message; whether a model accepts them depends on its provider. `model` (`default` or a `models` key) becomes the session's model; omitted keeps the session's choice. Assistant messages carry `metadata: { model, context, usage, notice? }`. |
 | `runTask(task, options?)` | Runs a task to completion → `RunRecord`. Throws `RunError` (with `.run`) if execution failed. A task paused for approval returns with `execution: 'awaiting_approval'`. |
 | `chat(message, options?)` | Runs a chat turn → `{ session, text, error?, pendingApprovals? }`. |
 | `respond({ sessionId, approvals, signal? })` | Answers a paused turn. `approvals: [{ approvalId, approved, reason? }]`, one per pending call → `TurnStream` continuing the same assistant message and run. |
@@ -56,6 +56,7 @@ export default defineAgent(({ root, env }) => config) // factory; env = project 
 | `sessions.load / list / create` | Read or create sessions. |
 | `skills.list()`, `skills.read(name)` | Discovered Skills; full `SKILL.md` text. Reading never marks a Skill as loaded. |
 | `memory.list()`, `memory.read(name)`, `memory.forget(name)` | Project memory entries `{ name, description, type, content, updatedAt }`. |
+| `tools.settings()`, `tools.update({ name, enabled?, alwaysAllow? })` | Project tool switches `{ disabled, alwaysAllow }`. `enabled: false` removes a tool from the model's active tools (a call to it is refused, never run). `alwaysAllow` applies only to tools in `approval` and stops them pausing. Changed under the project lock; applies from the next model call. |
 | `mcp.list / test / add / remove` | Config and project MCP servers. `test` connects once and lists tools; `add`/`remove` change project HTTP servers under the project lock and reconnect. |
 | `cancel()` | Aborts the active operation → `boolean`. |
 | `recover()` | Marks crash leftovers as interrupted; never replays tools. |
@@ -76,7 +77,7 @@ Lower-level exports for custom tools: `getExecutionContext`, `runWithExecutionCo
 | `init <dir> --template basic\|python` | Scaffold a project (same as `create-lab-agent`). | 0 / 1 |
 | `dev`, `serve [--port N]` | Workbench on 127.0.0.1 (default port 8787). | 0 on Ctrl-C |
 | `chat [--session ID]` | Terminal UI over the same session API. | 0 / 1 |
-| `run <task> [--input PATH]… [--session ID]` | Run one task; prints the `RunRecord`. | 0 passed or not_checked · 2 partial · 1 failed/aborted · 3 paused for approval |
+| `run <task> [--input PATH]… [--attach FILE]… [--session ID]` | Run one task; prints the `RunRecord`. `--attach` shows an image or PDF to the model. | 0 passed or not_checked · 2 partial · 1 failed/aborted · 3 paused for approval |
 | `approve --session ID [--deny] [--reason TEXT]` | Answer every pending tool call, then finish the turn. | as `run` |
 | `eval [FILE] [--repeat N]` | Run `evals.json` (or FILE) cases and grade each with the checker; saves `.lab-agent/evals/<time>.json`. | 0 all passed · 1 otherwise |
 | `check <run-id\|runs/path>` | Recheck without the model. | same as `run` |
@@ -96,14 +97,15 @@ For local port forwarding, set `createHttpServer(agent, { browserOrigin: 'http:/
 
 | Route | Body / query | Response |
 | --- | --- | --- |
-| `GET /api/state` | | `{ project, busy, active, model, models, limits, approval, subagents, pricing, compaction, memory, skills, tools, toolDetails, mcp, fileAccess, pythonScripts, ui, sessions, runs, issues, demo }`. `memory` is `false` or entry summaries without `content`. `toolDetails[]` has `needsApproval`. `mcp[]` has `source` (`config`/`project`), `tools`, and for project servers `url` and `headerNames`. |
+| `GET /api/state` | | `{ project, busy, active, model, models, limits, approval, subagents, pricing, compaction, memory, skills, tools, toolDetails, mcp, fileAccess, pythonScripts, ui, sessions, runs, issues, demo }`. `memory` is `false` or entry summaries without `content`. `toolDetails[]` has `needsApproval`, `enabled` and `alwaysAllow`; `toolSettings` is `{ disabled, alwaysAllow }`. `mcp[]` has `source` (`config`/`project`), `tools`, and for project servers `url` and `headerNames`. |
 | `GET /api/session` | `?id` | `SessionRecord` |
 | `POST /api/sessions` | `{ title? }` | `SessionRecord` (201) |
-| `POST /api/chat` | `{ sessionId, mode, model?, inputs?, messages }` | AI SDK UI message SSE; headers `x-lab-session-id`, `x-lab-run-id`. Only the last message is read; history loads server-side. A user text message starts a turn. An assistant message with `approval-responded` parts (useChat `addToolApprovalResponse`) answers a paused turn; only the decisions are used. |
+| `POST /api/chat` | `{ sessionId, mode, model?, inputs?, attachments?, messages }` | AI SDK UI message SSE; headers `x-lab-session-id`, `x-lab-run-id`. Only the last message is read; history loads server-side. A user text message starts a turn. An assistant message with `approval-responded` parts (useChat `addToolApprovalResponse`) answers a paused turn; only the decisions are used. |
 | `POST /api/steer` | `{ sessionId, text }` | `{ queued }` (202). 400 when no turn runs in that session, 409 while it is finishing |
 | `POST /api/compact` | `{ sessionId }` | `{ summary, usage }`. 400 when off or nothing to summarize |
 | `POST /api/cancel` | | `{ canceled }` |
 | `GET /api/skill` | `?name` | `{ name, description, path, content }` |
+| `PUT /api/tools` | `{ name, enabled?, alwaysAllow? }` | `{ disabled, alwaysAllow }`. 400 for an unknown tool or `alwaysAllow` on a tool that needs no approval; 409 while busy |
 | `GET /api/memory` | `?name` | `{ name, description, type, content, updatedAt }` |
 | `DELETE /api/memory` | `?name` | `{ forgotten }` |
 | `POST /api/mcp/test` | `{ name, url, headers? }` | Status and `tools[{ name, description }]`; changes nothing |
@@ -112,13 +114,13 @@ For local port forwarding, set `createHttpServer(agent, { browserOrigin: 'http:/
 | `GET /api/run` | `?id` | `{ run, check }` |
 | `POST /api/check` | `{ runId }` | `RunRecord` |
 | `GET /api/uploads` | | `{ files, maxBytes, extensions }` |
-| `POST /api/uploads` | `?name=` + raw UTF-8 body | `{ path, name, bytes, sha256, importedAt }` (201) |
+| `POST /api/uploads` | `?name=` + raw body | `{ path, name, bytes, sha256, importedAt }` (201) |
 | `GET /api/preview` | `?runId&path` | `{ kind, path, bytes, truncated, content?, rows?, mediaType? }` |
 | `GET /api/artifact` | `?runId&path` | file download |
 
 Errors are `{ error: { message } }` with 400 invalid input, 403 origin/token, 404 not found, 409 busy, 500 execution or config failure. A failure after a stream has been accepted arrives as an SDK error part, and the run gets a terminal record.
 
-Uploads: ≤10 MiB, ≤1000 per project, UTF-8 text only, extensions `.csv .tsv .json .txt .md .yaml .yml .log .fasta .fa .fna .faa .pdb .cif`. Each is stored once at `data/uploads/<uuid>-<name>`, read-only and never overwritten. Previews: text ≤256 KiB, CSV/TSV ≤50 rows × 30 columns, PNG/JPEG ≤10 MiB after a signature check. HTML and SVG are never previewed.
+Uploads: ≤10 MiB, ≤1000 per project. Text extensions `.csv .tsv .json .txt .md .yaml .yml .log .fasta .fa .fna .faa .pdb .cif` must be UTF-8; `.png .jpg .jpeg .gif .webp .pdf` must start with that format's signature. Each is stored once at `data/uploads/<uuid>-<name>`, read-only and never overwritten. Previews: text ≤256 KiB, CSV/TSV ≤50 rows × 30 columns, PNG/JPEG ≤10 MiB after a signature check. HTML and SVG are never previewed.
 
 ## Storage
 
@@ -127,6 +129,7 @@ Uploads: ≤10 MiB, ≤1000 per project, UTF-8 text only, extensions `.csv .tsv 
 .lab-agent/operation.lock         { id, pid, host, startedAt }
 .lab-agent/uploads/<uuid>.json    upload records
 .lab-agent/mcp.json               project HTTP MCP servers (may hold header credentials)
+.lab-agent/tools.json             project tool switches { disabled, alwaysAllow }
 .lab-agent/evals/<time>.json      eval reports
 .lab-agent/memory/<name>.md       project memory: YAML frontmatter (name, description, type, updatedAt) + body
 runs/<id>/run.json                RunRecord (schemaVersion 2)
@@ -164,11 +167,17 @@ Each check runs three stages: (1) preflight compares recorded inputs, code and u
 
 ## Provenance
 
-Each run records the Core and AI SDK versions; SHA-256 of the frozen inputs (≤256 declarations, ≤4096 files); config, instructions, registered scripts, local checker files and `provenance.code`; every available `SKILL.md` (marked `loaded` when actually used); the memory entries listed to the model at task start (`memory[{ name, sha256, updatedAt }]`); a config hash and a checker hash; and the output hashes at completion. Hashes show byte identity, not correctness. Native modules, transitive dependencies and MCP server versions are not captured.
+Each run records the Core and AI SDK versions; SHA-256 of the frozen inputs (≤256 declarations, ≤4096 files); config, instructions, registered scripts, local checker files and `provenance.code`; every available `SKILL.md` (marked `loaded` when actually used); the memory entries listed to the model at task start (`memory[{ name, sha256, updatedAt }]`); attached images and PDFs (`attachments`); the tool switches in effect when any are set (`toolSettings`); the host `environment` (Node version, platform, arch, the configured Python's `--version` or `unavailable`, and `CONDA_DEFAULT_ENV`); a config hash and a checker hash; and the output hashes at completion. Hashes show byte identity, not correctness. Native modules, transitive dependencies and MCP server versions are not captured.
 
 ## Harness behavior
 
 Approval. Tools matching `approval` use the AI SDK's native `toolApproval`. The turn ends with the call in state `approval-requested`; the session becomes `awaiting_approval` and new messages are refused until every pending call is answered. The decision is written onto the stored part and the same assistant message continues. Only the server's own pending calls can be answered. Helpers never receive tools that need approval.
+
+Tool switches. `.lab-agent/tools.json` turns a tool off for the model (`activeTools` leaves it out for the main agent and helpers; the SDK refuses a call to it before approval or execution) or marks a tool from `approval` as always allowed. The config stays the ceiling: a switch can remove a tool or skip its pause, never add a tool. The workbench approval card's "Always allow" sets the switch, then approves.
+
+Attachments. A user message may carry images or PDFs. History stores only a reference (`url: "project:<path>"`); each model call reads the bytes through the file policy, so secrets stay unreadable and sessions stay small. A file that later disappears or becomes denied is replaced by a note. File bytes do not count toward `maxContextChars`; provider token limits still apply.
+
+Parallel helpers. The SDK runs tool calls of one step concurrently, so a model can start several `runSubagent` calls at once; they share the turn's cancel signal, budget and output directory.
 
 Retries and repair. Model calls retry 429/5xx with exponential backoff (`limits.maxRetries`, default 2). A tool call whose name differs from a real tool only in case or punctuation (`list_files` → `listFiles`) is repaired; invalid inputs return the validation error to the model as a tool error.
 

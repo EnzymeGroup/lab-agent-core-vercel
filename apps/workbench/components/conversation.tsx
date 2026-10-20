@@ -25,6 +25,8 @@ interface Props {
 }
 
 const MAX_BINDINGS = 256;
+const MAX_ATTACHMENTS = 8;
+const ATTACHABLE = /\.(?:png|jpe?g|gif|webp|pdf)$/iu;
 
 function Notice({ tone = 'neutral', role, children }: { tone?: 'neutral' | 'danger'; role?: 'alert' | 'status'; children: React.ReactNode }) {
   return (
@@ -134,6 +136,9 @@ export default function Conversation({ token, session, state, draftReference, on
   modelRef.current = model;
   const boundInputsRef = useRef(boundInputs);
   boundInputsRef.current = boundInputs;
+  const [attachments, setAttachments] = useState<string[]>([]);
+  /** Set only for the duration of one send, so the transport sends what the composer showed. */
+  const attachmentsRef = useRef<string[]>([]);
   const refreshRef = useRef(onStateRefresh);
   refreshRef.current = onStateRefresh;
   const restoreRef = useRef<() => Promise<void>>(async () => {});
@@ -157,6 +162,7 @@ export default function Conversation({ token, session, state, draftReference, on
         body: {
           sessionId: session.id, mode: modeRef.current, model: modelRef.current,
           ...(modeRef.current === 'task' && boundInputsRef.current.length ? { inputs: [...boundInputsRef.current] } : {}),
+          ...(attachmentsRef.current.length ? { attachments: [...attachmentsRef.current] } : {}),
           messages: messages.filter(message => message.role === 'user').slice(-1),
         },
       };
@@ -235,6 +241,18 @@ export default function Conversation({ token, session, state, draftReference, on
   useEffect(() => {
     if (!draftReference || draftReference.id === insertedReference.current) return;
     insertedReference.current = draftReference.id;
+    // Images and PDFs are shown to the model with the next message instead of being bound as task inputs.
+    if (ATTACHABLE.test(draftReference.path)) {
+      // The effect runs once per reference, so reading this render's attachments is current.
+      if (attachments.length >= MAX_ATTACHMENTS && !attachments.includes(draftReference.path)) {
+        setBindingError(`A message can carry up to ${MAX_ATTACHMENTS} attachments.`);
+        return;
+      }
+      setBindingError('');
+      setAttachments(previous => previous.includes(draftReference.path) ? previous : [...previous, draftReference.path]);
+      textarea.current?.focus();
+      return;
+    }
     setMode('task');
     if (boundInputsRef.current.length >= MAX_BINDINGS && !boundInputsRef.current.includes(draftReference.path)) {
       setBindingError('A task can bind up to 256 input declarations. Remove one before using another uploaded file.');
@@ -269,9 +287,17 @@ export default function Conversation({ token, session, state, draftReference, on
     }
   }
 
-  function approve(approvalId: string, approved: boolean) {
+  async function approve(approvalId: string, approved: boolean, always?: { toolName: string }) {
     setStreamError('');
     clearError();
+    if (always) {
+      try {
+        await api(token, '/api/tools', { method: 'PUT', body: JSON.stringify({ name: always.toolName, alwaysAllow: true }) });
+      } catch (error) {
+        setStreamError(`Could not set always allow: ${errorMessage(error)}`);
+        return;
+      }
+    }
     shouldFollow.current = true;
     void addToolApprovalResponse({ id: approvalId, approved, ...(approved ? {} : { reason: 'Denied in the workbench.' }) });
   }
@@ -288,7 +314,14 @@ export default function Conversation({ token, session, state, draftReference, on
     clearError();
     setLocalStart(new Date().toISOString());
     shouldFollow.current = true;
-    await sendMessage({ text });
+    // The transport reads the attachments for this send; the composer clears at once.
+    attachmentsRef.current = attachments;
+    setAttachments([]);
+    try {
+      await sendMessage({ text });
+    } finally {
+      attachmentsRef.current = [];
+    }
   }
 
   async function cancel() {
@@ -326,7 +359,7 @@ export default function Conversation({ token, session, state, draftReference, on
                 The agent sees the first {session.summary.messageCount} messages as a summary. The full history below is unchanged.
               </p>
             )}
-            {messages.map(message => <Message key={message.id} message={message} title={title} onApprove={awaiting && !streaming ? approve : undefined} />)}
+            {messages.map(message => <Message key={message.id} message={message} title={title} onApprove={awaiting && !streaming ? (id, approved, always) => { void approve(id, approved, always); } : undefined} />)}
             {(status === 'submitted' || (runningHere && messages.at(-1)?.role === 'user')) && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
                 <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Working…
@@ -372,6 +405,7 @@ export default function Conversation({ token, session, state, draftReference, on
         <Composer
           sessionId={session.id} mode={mode} onModeChange={setMode} input={input} onInputChange={setInput}
           boundInputs={boundInputs} onBoundInputsChange={setBoundInputs} bindingError={bindingError} onBindingError={setBindingError}
+          attachments={attachments} onRemoveAttachment={path => setAttachments(previous => previous.filter(item => item !== path))}
           chatScripts={state?.pythonScripts?.filter(script => script.modes.includes('chat')).length}
           blocked={blocked} steering={steering} textarea={textarea} onSubmit={() => { void submit(); }}
           models={state?.models ?? []} model={model} onModelChange={setModel} context={latestContext(messages)}

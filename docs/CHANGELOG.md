@@ -30,6 +30,10 @@ Added:
 - Search: `findFiles` (glob) and `searchFiles` (regex, line numbers) walk the workspace under the file policy; no external binary.
 - Project memory: `.lab-agent/memory/<name>.md` entries written by the agent (`saveMemory`, `readMemory`, `forgetMemory`), indexed each turn and recorded in run provenance (`provenance.memory`). `memory.*`, `GET/DELETE /api/memory`, `lab-agent memory` and Capabilities → Memory read and delete them.
 - `lab-agent eval` / `runEvals` / `loadEvalFile`: run `evals.json` cases and grade them with the checker; reports in `.lab-agent/evals/`.
+- Tool switches: `tools.settings/update`, `PUT /api/tools` and Capabilities → Tools turn a tool off for the model or always allow a tool from `approval`; stored in `.lab-agent/tools.json`, recorded as `provenance.toolSettings`. The approval card gains **Always allow**.
+- Attachments: `attachments` on `streamTurn`/`chat`/`runTask`, `/api/chat` and `lab-agent run --attach` show images and PDFs to the model. History stores a `project:` reference; bytes are read through the file policy per model call and do not count toward `maxContextChars`. Recorded as `provenance.attachments`. Uploads accept `.png .jpg .jpeg .gif .webp .pdf` after a signature check; the workbench attaches them from Input files.
+- `provenance.environment`: Node version, platform, arch, the configured Python's version and `CONDA_DEFAULT_ENV`.
+- Several `runSubagent` calls in one step run concurrently (SDK default), now covered by a test.
 
 - `ui` config (`title`, `tagline`, `accent`, `starters`) for workbench branding. Presentation only; excluded from provenance. Returned by `/api/state` and `inspect`.
 - Uploads and previews accept `.yaml`, `.yml` and `.log`.
