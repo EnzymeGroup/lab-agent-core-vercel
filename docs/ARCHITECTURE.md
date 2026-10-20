@@ -157,6 +157,7 @@ Stable CSS hooks used by tests and custom themes: `.message-user`, `.message-ass
 | Path | Covers |
 | --- | --- |
 | `tests/fixtures/model-server.mjs` | Deterministic OpenAI-compatible HTTP model (labeled fixture) |
+| `tests/fixtures/project.mjs` | Shared setup: `copyExample`, `fixtureModel`, `callTool` (parses input like the SDK) |
 | `tests/fixtures/mcp-server.mjs` | Real stdio MCP server |
 | `tests/resources.test.mjs`, `access.test.mjs` | Workspace policy, subprocesses, Skills, tools, MCP |
 | `tests/lifecycle.test.mjs`, `review.test.mjs` | Full turns, cancel, crash recovery, HTTP, concurrency |

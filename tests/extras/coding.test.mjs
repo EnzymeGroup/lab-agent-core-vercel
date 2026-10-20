@@ -3,21 +3,20 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, modelFromEnv, runWithExecutionContext } from '../../packages/core/dist/index.js';
+import { createAgent, runWithExecutionContext } from '../../packages/core/dist/index.js';
 import { codingTools, lineDiff } from '../../packages/extras/dist/coding.js';
 import { startModelServer } from '../fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel } from '../fixtures/project.mjs';
 
 // lab-agent-extras/coding. The shell tests run real commands in a real bubblewrap sandbox
 // and are skipped where bwrap is missing. Not live model inference.
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 const run = promisify(execFile);
 const hasBwrap = (() => { try { execFileSync('bwrap', ['--version']); return true; } catch { return false; } })();
 
-const call = (tools, name, input) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = callTool;
 
 async function project(t) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-coding-')));
@@ -193,10 +192,9 @@ test('sandbox "none" still clears the environment', async t => {
 });
 
 test('inside Core, shell pauses for approval without being listed in approval', { skip: !hasBwrap && 'bwrap is not installed' }, async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-coding-agent-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-extras-coding-agent-');
   const fixture = await startModelServer({ plan: [{ name: 'shell', args: { command: 'echo hi > hello.txt' } }] });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url);
   const agent = await createAgent({ root, model, tools: codingTools({ root }), subagents: { scout: { description: 'x', instructions: 'y' } } });
   t.after(async () => { await agent.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); });
 

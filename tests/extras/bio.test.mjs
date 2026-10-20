@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { bioTools } from '../../packages/extras/dist/bio.js';
+import { callTool } from '../fixtures/project.mjs';
 
 // lab-agent-extras/bio against a local stand-in for NCBI, UniProt and Ensembl. No real service is contacted.
 
-const call = (tools, name, input) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = callTool;
 
 async function services(t) {
   const requests = [];

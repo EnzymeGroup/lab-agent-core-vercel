@@ -1,18 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, modelFromEnv } from '../../packages/core/dist/index.js';
+import { createAgent } from '../../packages/core/dist/index.js';
 import { envTools } from '../../packages/extras/dist/env.js';
 import { startModelServer } from '../fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel } from '../fixtures/project.mjs';
 
 // lab-agent-extras/env with stand-in conda and python executables. Not live model inference.
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 
-const call = (tools, input = {}) => tools.captureEnvironment.execute(tools.captureEnvironment.inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = (tools, input = {}) => callTool(tools, 'captureEnvironment', input);
 
 async function fakes(t) {
   const dir = await mkdtemp(path.join(tmpdir(), 'lab-agent-fake-env-'));
@@ -62,10 +61,9 @@ test('a named environment, no active environment, and nothing to capture', async
 
 test('in a Core task the files become run artifacts with hashes', async t => {
   const fake = await fakes(t);
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-env-agent-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-extras-env-agent-');
   const fixture = await startModelServer({ plan: [{ name: 'captureEnvironment', args: {} }] });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url);
   const env = { ...process.env, CONDA_PREFIX: '/opt/conda/envs/bio', CONDA_DEFAULT_ENV: 'bio' };
   const agent = await createAgent({ root, model, env, tools: envTools({ root, env, conda: fake.conda, python: fake.python }) });
   t.after(async () => { await agent.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); });

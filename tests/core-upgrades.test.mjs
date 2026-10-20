@@ -1,24 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createHttpServer, modelFromEnv, InputError } from '../packages/core/dist/index.js';
+import { createAgent, createHttpServer, InputError } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { copyExample, fixtureModel } from './fixtures/project.mjs';
 
 // Core upgrades on feat/extras: tool switches, parallel helpers, attachments, environment provenance.
 // Deterministic local HTTP model fixture. Not live model inference.
-const repository = fileURLToPath(new URL('../', import.meta.url));
 
 async function setup(t, { fixture: fixtureOptions, config = {} } = {}) {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-upgrades-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true,
-    filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-upgrades-');
   const fixture = await startModelServer(fixtureOptions);
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture-default', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'fixture-default');
   const calls = [];
   const stamp = tool({
     description: 'Stamp a note (side effect that needs approval in these tests).',

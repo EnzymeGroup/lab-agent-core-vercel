@@ -1,18 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { checkRun, createAgent, createRunStore, modelFromEnv } from '../packages/core/dist/index.js';
+import { checkRun, createAgent, createRunStore } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { copyExample, fixtureModel } from './fixtures/project.mjs';
 
 async function setup(t, extra = {}) {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-provenance-'));
-  await cp(new URL('../examples/sequence-summary/', import.meta.url), root, { recursive: true,
-    filter: file => !/(?:^|\/)(?:runs|\.lab-agent|node_modules|__pycache__)(?:\/|$)/u.test(file) });
+  const root = await copyExample('lab-provenance-');
   const fixture = await startModelServer();
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'provenance-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'provenance-fixture');
   const config = { root, model, python: { scripts: { summarize: { path: 'tools/summarize.py', description: 'Summarize FASTA' } } },
     validation: { command: ['python3', 'tools/validate.py'] }, ...extra };
   const agent = await createAgent(config);

@@ -2,17 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { gzipSync } from 'node:zlib';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, modelFromEnv } from '../../packages/core/dist/index.js';
+import { rm } from 'node:fs/promises';
+import { createAgent } from '../../packages/core/dist/index.js';
 import { webTools, tavily, htmlToText } from '../../packages/extras/dist/web.js';
 import { isPrivateAddress } from '../../packages/extras/dist/net.js';
 import { startModelServer } from '../fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel } from '../fixtures/project.mjs';
 
 // lab-agent-extras/web against local HTTP fixtures. No real search provider or website is contacted.
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 
 async function site(t, routes) {
   const requests = [];
@@ -32,7 +29,7 @@ async function site(t, routes) {
   return { base: `http://127.0.0.1:${server.address().port}`, port: server.address().port, requests };
 }
 
-const call = (tools, name, input) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = callTool;
 
 const PAGE = `<!doctype html><html><head><title>Gene &amp; Protein</title><style>body{}</style><script>steal()</script></head>
 <body><h1>BRCA1</h1><p>DNA repair&nbsp;protein. See <a href="https://example.org/brca1">the entry</a>.</p>
@@ -135,11 +132,10 @@ test('webSearch through Tavily: key from env, request shape, results, errors', a
 });
 
 test('web tools run inside a Core agent turn', async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-web-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-extras-web-');
   const { base } = await site(t, { '/page': (_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGE); } });
   const fixture = await startModelServer({ plan: [{ name: 'webFetch', args: { url: `${base}/page` } }] });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url);
   const agent = await createAgent({ root, model, tools: webTools({ search: false, allowPrivate: true }) });
   t.after(async () => { await agent.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); });
   const { session } = await agent.chat('[chat-only] read the page');

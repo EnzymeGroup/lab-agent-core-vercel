@@ -5,8 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createWorkspace, createTools, discoverSkills, loadSkill, modelFromEnv, runWithExecutionContext } from '../packages/core/dist/index.js';
+import { createAgent, createWorkspace, createTools, discoverSkills, loadSkill, runWithExecutionContext } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 const options = { toolCallId: 'access-test', messages: [], context: {} };
 async function temporary(t) {
@@ -164,7 +165,7 @@ test('noncooperative native tool cancellation retains ownership until its actual
   let turn;
   try {
     agent = await createAgent({ root,
-      model: modelFromEnv({ LAB_AGENT_MODEL: 'native-cancel-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url }),
+      model: fixtureModel(fixture.url, 'native-cancel-fixture'),
       tools: { noncooperative: tool({ inputSchema: z.object({}), execute: async () => { markStarted(); await gate; await put(root, 'native-settled.txt', 'settled'); return 'finished'; } }) },
     });
     turn = await agent.streamTurn({ message: 'Run the bounded noncooperative native tool.', mode: 'task' });

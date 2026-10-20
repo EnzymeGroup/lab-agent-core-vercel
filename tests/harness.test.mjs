@@ -1,16 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createHttpServer, modelFromEnv, loadEvalFile, runEvals, InputError } from '../packages/core/dist/index.js';
+import { createAgent, createHttpServer, loadEvalFile, runEvals, InputError } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { copyExample, fixtureModel } from './fixtures/project.mjs';
 
 // Deterministic local HTTP model fixture. Not live model inference.
-const repository = fileURLToPath(new URL('../', import.meta.url));
 
 /** Writes AGENT_CHECK_FILE: fails the first `failures` checks, then passes. */
 const CHECKER = `import json, os, pathlib
@@ -24,12 +22,10 @@ pathlib.Path(os.environ['AGENT_CHECK_FILE']).write_text(json.dumps({'status': st
 `;
 
 async function setup(t, { fixture: fixtureOptions, config = {}, checkerFailures } = {}) {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-harness-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true,
-    filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-harness-');
   await writeFile(path.join(root, 'tools/fixture_check.py'), CHECKER);
   const fixture = await startModelServer(fixtureOptions);
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture-default', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'fixture-default');
   const calls = [];
   const stamp = tool({
     description: 'Stamp a note (side effect that needs approval in these tests).',

@@ -6,10 +6,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createWorkspace, defineAgent, modelFromEnv, runWithExecutionContext } from '../packages/core/dist/index.js';
+import { createAgent, createWorkspace, defineAgent, runWithExecutionContext } from '../packages/core/dist/index.js';
 import { discoverSkills, loadSkill, snapshotSkills } from '../packages/core/dist/index.js';
 import { createTools, pythonToolAllowed } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 const options = { toolCallId: 'skills-policy-test', messages: [], context: {} };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -27,7 +28,7 @@ async function put(root, file, bytes) {
 }
 async function fixtureAgent(t, root, plan, extra = {}) {
   const fixture = await startModelServer({ plan, text: 'Native fixture completed; inspect stored evidence.' });
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'skills-policy-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'skills-policy-fixture');
   const agent = await createAgent({ root, model, ...extra });
   t.after(async () => { await agent.close(); await fixture.close(); });
   return { agent, fixture };

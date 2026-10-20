@@ -5,14 +5,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { checkRun, createRunStore, modelFromEnv, runCommand } from '../packages/core/dist/index.js';
+import { checkRun, createRunStore, runCommand } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 async function setup(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-checker-'));
   const fixture = await startModelServer({ plan: [] });
   t.after(async () => { await fixture.close(); await rm(root, { recursive: true, force: true }); });
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'fixture');
   const config = { root, model, validation: { command: [process.execPath, 'checker.mjs'], timeoutMs: 3000 } };
   const store = createRunStore(config);
   const run = await store.create('Existing outputs', 'recorded-session');

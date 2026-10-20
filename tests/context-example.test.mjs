@@ -5,10 +5,11 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolLoopAgent, isStepCount } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createAgent, modelFromEnv } from '../packages/core/dist/index.js';
+import { createAgent } from '../packages/core/dist/index.js';
 import { createScientificContextPolicy } from '../examples/advanced/context-policy.ts';
 import { createCsvHeadTool } from '../examples/advanced/python-arguments.ts';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 test('native prepareStep retains stable rules and saved references when old complete turns are removed', async t => {
   const fixture = await startModelServer({ text: 'Deterministic context example verified.' });
@@ -40,7 +41,7 @@ async function project(t, slow = false) {
   const fixture = await startModelServer({ plan: [{ name: 'csvHead', args: { input: 'data/input.csv', maxRows: 2 } }] });
   t.after(() => fixture.close());
   const native = createCsvHeadTool(root);
-  const agent = await createAgent({ root, instructions: { text: 'Use the bounded CSV sample tool.' }, model: modelFromEnv({ LAB_AGENT_MODEL: 'native-python-fixture', LAB_AGENT_API_KEY: 'local-fixture-only', LAB_AGENT_BASE_URL: fixture.url }), tools: { csvHead: native }, provenance: { inputs: ['data/input.csv'], code: ['tools/csv-arguments.py'] }, limits: { maxSteps: 3, timeoutMs: 10_000 } });
+  const agent = await createAgent({ root, instructions: { text: 'Use the bounded CSV sample tool.' }, model: fixtureModel(fixture.url, 'native-python-fixture'), tools: { csvHead: native }, provenance: { inputs: ['data/input.csv'], code: ['tools/csv-arguments.py'] }, limits: { maxSteps: 3, timeoutMs: 10_000 } });
   t.after(() => agent.close());
   return { root, agent, native };
 }

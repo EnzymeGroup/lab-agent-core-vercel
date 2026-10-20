@@ -5,14 +5,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, createRequestHandler, getExecutionContext, modelFromEnv } from '../packages/core/dist/index.js';
+import { createAgent, createRequestHandler, getExecutionContext } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jr1sAAAAASUVORK5CYII=', 'base64');
 async function setup(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-files-'));
   const fixture = await startModelServer({ plan: [{ name: 'produce', args: {} }] });
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'file-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'file-fixture');
   const agent = await createAgent({ root, model, tools: { produce: tool({ inputSchema: z.object({}), execute: async () => {
     const output = getExecutionContext().outputDirectory;
     await Promise.all([

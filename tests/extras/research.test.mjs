@@ -3,20 +3,19 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, discoverSkills, createWorkspace, loadAgentConfig, modelFromEnv, runWithExecutionContext } from '../../packages/core/dist/index.js';
+import { createAgent, discoverSkills, createWorkspace, loadAgentConfig, runWithExecutionContext } from '../../packages/core/dist/index.js';
 import { webTools } from '../../packages/extras/dist/web.js';
 import { researchTools, researchSubagents, normalizeQuote, CITATIONS_CHECKER, RESEARCH_SKILL_DIR } from '../../packages/extras/dist/research.js';
 import { startModelServer } from '../fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel, repository } from '../fixtures/project.mjs';
 
 // lab-agent-extras/research against local pages and the deterministic model fixture. Not live research.
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 const run = promisify(execFile);
 
-const call = (tools, name, input) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = callTool;
 
 async function pages(t, count = 5) {
   const server = http.createServer((req, res) => {
@@ -112,8 +111,7 @@ test('the citation checker: passed, partial and failed reports', async t => {
 
 test('a Core task: two researcher helpers in parallel, report.md cites both, the checker passes', async t => {
   const base = await pages(t);
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-research-agent-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-extras-research-agent-');
   const offered = input => (input.tools ?? []).map(item => item.function.name);
   const plan = input => {
     if (!offered(input).includes('runSubagent')) {
@@ -128,7 +126,7 @@ test('a Core task: two researcher helpers in parallel, report.md cites both, the
     ];
   };
   const fixture = await startModelServer({ plan });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url);
   const agent = await createAgent({
     root, model, env: { ...process.env, RESEARCH_MIN_SOURCES: '2' },
     tools: { ...webTools({ search: false, allowPrivate: true }), ...researchTools({ root, allowPrivate: true }) },

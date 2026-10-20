@@ -1,22 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, createHttpServer, modelFromEnv, InputError, NotFoundError } from '../packages/core/dist/index.js';
+import { createAgent, createHttpServer, InputError, NotFoundError } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
 import { startMcpHttpServer } from './fixtures/mcp-http-server.mjs';
+import { copyExample, fixtureModel } from './fixtures/project.mjs';
 
 // Deterministic local HTTP fixtures (model and MCP). Not live model inference.
-const repository = fileURLToPath(new URL('../', import.meta.url));
 
 async function setup(t, config = {}) {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-workbench-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true,
-    filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-workbench-');
   const fixture = await startModelServer();
-  const model = id => modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: id, LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = id => fixtureModel(fixture.url, id);
   const agent = await createAgent({ root, model: model('fixture-default'), models: { strong: model('fixture-strong') },
     python: { scripts: { summarize: { path: 'tools/summarize.py', description: 'Summarize FASTA source data' } } }, ...config });
   t.after(async () => { await agent.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); });

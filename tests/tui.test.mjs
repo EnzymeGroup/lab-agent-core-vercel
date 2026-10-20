@@ -1,18 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { runCommand } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { copyExample, repository } from './fixtures/project.mjs';
 
 test('official terminal UI uses shared HTTP session path in a real pseudo-terminal', { skip: process.platform === 'win32' }, async t => {
-  const repository = fileURLToPath(new URL('../', import.meta.url));
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-tui-'));
+  const root = await copyExample('lab-agent-tui-');
   const fixture = await startModelServer({ plan: [] });
   t.after(async () => { await fixture.close(); await rm(root, { recursive: true, force: true }); });
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent)(?:\/|$)/.test(source) });
   const config = path.join(root, 'agent.config.ts');
   await writeFile(config, (await readFile(config, 'utf8')).replace("'lab-agent-core-vercel'", JSON.stringify(pathToFileURL(path.join(repository, 'packages/core/dist/index.js')).href)));
   const result = await runCommand('python3', [path.join(repository, 'scripts/tui-smoke.py'), process.execPath, path.join(repository, 'packages/core/dist/cli/main.js'), 'chat', '--root', root], {

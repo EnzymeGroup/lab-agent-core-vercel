@@ -1,18 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, modelFromEnv } from '../../packages/core/dist/index.js';
+import { createAgent } from '../../packages/core/dist/index.js';
 import { hpcTools, slurm, localJobs } from '../../packages/extras/dist/hpc.js';
 import { startModelServer } from '../fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel } from '../fixtures/project.mjs';
 
 // lab-agent-extras/hpc. Local jobs are real background processes; Slurm uses stand-in
 // sbatch/squeue/sacct/scancel scripts (no cluster is contacted). Not live model inference.
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 
-const call = (tools, name, input, options = {}) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [], ...options });
+const call = callTool;
 
 async function project(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-hpc-'));
@@ -161,13 +160,12 @@ test('slurm: sbatch argv, scheduler states and sacct exit codes', async t => {
 });
 
 test('hpc tools inside a Core task: the job records the run that started it', async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-extras-hpc-agent-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true, filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-extras-hpc-agent-');
   await mkdir(path.join(root, 'jobs-src'));
   await writeFile(path.join(root, 'jobs-src/hello.sh'), '#!/usr/bin/env bash\necho hi > "$JOB_OUTPUT_DIR/out.txt"\n');
   await chmod(path.join(root, 'jobs-src/hello.sh'), 0o755);
   const fixture = await startModelServer({ plan: [{ name: 'submitJob', args: { job: 'hello' } }] });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url);
   const agent = await createAgent({ root, model, tools: hpcTools({ root, jobs: { hello: JOBS.hello }, adapter: localJobs() }), approval: ['submitJob'] });
   t.after(async () => { await agent.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); });
   const paused = await agent.runTask('[chat-only] start the job');

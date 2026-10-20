@@ -3,14 +3,15 @@ import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createAgent, createRunStore, createRequestHandler, modelFromEnv, checkRun, runCommand } from '../packages/core/dist/index.js';
+import { createAgent, createRunStore, createRequestHandler, checkRun, runCommand } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 async function setup(t, extra = {}, fixtureOptions = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-review-'));
   const fixture = await startModelServer({ plan: [], text: 'Complete native response.', ...fixtureOptions });
   t.after(async () => { await fixture.close(); await rm(root, { recursive: true, force: true }); });
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'review-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'review-fixture');
   const config = { root, model, ...extra };
   return { root, fixture, config };
 }

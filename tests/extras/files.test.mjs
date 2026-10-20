@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { crc32, deflateRawSync, gzipSync } from 'node:zlib';
 import { inspectTools } from '../../packages/extras/dist/files.js';
+import { callTool } from '../fixtures/project.mjs';
 
 // lab-agent-extras/files against generated fixture files. Not live model inference.
 
-const call = (tools, input) => tools.inspectFile.execute(tools.inspectFile.inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = (tools, input) => callTool(tools, 'inspectFile', input);
 
 /** One BGZF block (gzip member with the "BC" extra subfield), as written by bgzip and samtools. */
 function bgzf(data) {

@@ -1,16 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createAgent, createHttpServer, createTools, createWorkspace, modelFromEnv, saveMemory, InputError } from '../packages/core/dist/index.js';
+import { createAgent, createHttpServer, createTools, createWorkspace, saveMemory, InputError } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { callTool, copyExample, fixtureModel } from './fixtures/project.mjs';
 
 // Deterministic local HTTP model fixture. Not live model inference.
-const repository = fileURLToPath(new URL('../', import.meta.url));
 // The SDK parses inputs (and fills defaults) before execute; do the same here.
-const call = (tools, name, input) => tools[name].execute(tools[name].inputSchema.parse(input), { toolCallId: 'test', messages: [] });
+const call = callTool;
 
 async function searchProject(t, policy) {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-search-'));
@@ -69,9 +68,7 @@ const systemText = input => (input.messages ?? []).filter(message => message.rol
 const completions = fixture => fixture.requests.filter(request => request.path === '/v1/chat/completions' && request.body);
 
 async function memoryAgent(t, config = {}) {
-  const root = await mkdtemp(path.join(tmpdir(), 'lab-agent-memory-'));
-  await cp(path.join(repository, 'examples/sequence-summary'), root, { recursive: true,
-    filter: source => !/(?:^|\/)(?:runs|\.lab-agent|__pycache__)(?:\/|$)/.test(source) });
+  const root = await copyExample('lab-agent-memory-');
   const fixture = await startModelServer({
     plan: input => {
       const text = lastUserText(input);
@@ -81,7 +78,7 @@ async function memoryAgent(t, config = {}) {
       return [];
     },
   });
-  const model = modelFromEnv({ LAB_AGENT_PROVIDER: 'openai', LAB_AGENT_MODEL: 'fixture-default', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'fixture-default');
   t.after(async () => { await fixture.close(); await rm(root, { recursive: true, force: true }); });
   const agent = await createAgent({ root, model, validation: undefined, ...config });
   t.after(() => agent.close());

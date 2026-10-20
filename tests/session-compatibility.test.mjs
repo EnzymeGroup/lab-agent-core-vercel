@@ -5,13 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createAgent, modelFromEnv, SessionCompatibilityError } from '../packages/core/dist/index.js';
+import { createAgent, SessionCompatibilityError } from '../packages/core/dist/index.js';
 import { startModelServer } from './fixtures/model-server.mjs';
+import { fixtureModel } from './fixtures/project.mjs';
 
 test('removed or changed native tool schemas yield actionable errors without rewriting session history', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'lab-history-schema-'));
   const fixture = await startModelServer({ plan: [{ name: 'format', args: { value: 'source-text' } }] });
-  const model = modelFromEnv({ LAB_AGENT_MODEL: 'history-fixture', LAB_AGENT_API_KEY: 'fixture-only', LAB_AGENT_BASE_URL: fixture.url });
+  const model = fixtureModel(fixture.url, 'history-fixture');
   t.after(async () => { await fixture.close(); await rm(root, { recursive: true, force: true }); });
   const original = await createAgent({ root, model, tools: { format: tool({ inputSchema: z.object({ value: z.string() }), execute: ({ value }) => value.trim() }) } });
   const result = await original.chat('Use the format tool.');
