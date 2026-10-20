@@ -6,22 +6,22 @@ import type { AgentResources } from './resources.js';
 /**
  * Per-project tool switches (.lab-agent/tools.json), read at call time:
  * disabled tools leave the model's active tools (the SDK refuses calls to them);
- * alwaysAllow lets a tool from config.approval run without pausing.
+ * alwaysAllow lets a tool that needs approval (config.approval or its own needsApproval) run without pausing.
  * The config is the ceiling: a switch can turn a tool off or skip its pause, never add a tool.
  */
 
 export interface ToolSwitches {
   settings: ToolSettings;
   enabled(name: string): boolean;
-  /** Listed in config.approval and not marked alwaysAllow. */
-  pauses(name: string): boolean;
+  /** Marked alwaysAllow: runs without pausing even if it needs approval. */
+  allowed(name: string): boolean;
 }
 
-export function toolSwitches(settings: ToolSettings, needsApproval: (name: string) => boolean): ToolSwitches {
+export function toolSwitches(settings: ToolSettings): ToolSwitches {
   return {
     settings,
     enabled(name) { return !this.settings.disabled.includes(name); },
-    pauses(name) { return needsApproval(name) && !this.settings.alwaysAllow.includes(name); },
+    allowed(name) { return this.settings.alwaysAllow.includes(name); },
   };
 }
 

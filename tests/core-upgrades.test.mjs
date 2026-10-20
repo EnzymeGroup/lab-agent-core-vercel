@@ -189,3 +189,44 @@ test('provenance records the host environment', async t => {
   const broken = await setup(t, { fixture: { plan: [] }, config: { env, python: { command: 'definitely-not-python', scripts: {} } } });
   assert.equal((await broken.agent.runTask('[chat-only] env')).provenance.environment.python, 'unavailable');
 });
+
+test('a tool that declares its own needsApproval pauses without being listed in approval', async t => {
+  const runs = [];
+  const guarded = tool({
+    description: 'A side effect that asks for approval itself.',
+    inputSchema: z.object({ note: z.string() }),
+    needsApproval: true,
+    execute: async ({ note }) => { runs.push(`guarded:${note}`); return { ok: true }; },
+  });
+  const careful = tool({
+    description: 'Asks for approval only for dangerous input.',
+    inputSchema: z.object({ note: z.string() }),
+    needsApproval: async ({ note }) => note === 'danger',
+    execute: async ({ note }) => { runs.push(`careful:${note}`); return { ok: true }; },
+  });
+  const plan = input => {
+    const text = JSON.stringify(input.messages);
+    if (text.includes('use guarded')) return [{ name: 'guarded', args: { note: 'g' } }];
+    return [{ name: 'careful', args: { note: text.includes('danger') ? 'danger' : 'safe' } }];
+  };
+  const { agent } = await setup(t, { fixture: { plan }, config: { tools: { guarded, careful }, subagents: { scout: { description: 'x', instructions: 'y' } } } });
+  const state = await agent.inspect();
+  assert.equal(state.toolDetails.find(item => item.name === 'guarded').needsApproval, true);
+  assert.equal(state.toolDetails.find(item => item.name === 'careful').needsApproval, true);
+  const scout = state.subagents.find(item => item.name === 'scout');
+  assert.ok(!scout.tools.includes('guarded') && !scout.tools.includes('careful'), 'helpers never get tools that can pause');
+
+  const paused = await agent.chat('[chat-only] use guarded');
+  assert.equal(paused.session.state, 'awaiting_approval');
+  assert.deepEqual(runs, []);
+  await agent.approve(paused.session.id, true);
+  assert.deepEqual(runs, ['guarded:g']);
+
+  await agent.chat('[chat-only] careful safe');
+  assert.deepEqual(runs, ['guarded:g', 'careful:safe'], 'the function decides per call');
+  assert.equal((await agent.chat('[chat-only] careful danger')).session.state, 'awaiting_approval');
+
+  await agent.tools.update({ name: 'guarded', alwaysAllow: true });
+  assert.equal((await agent.chat('[chat-only] use guarded')).session.state, 'idle');
+  assert.deepEqual(runs.at(-1), 'guarded:g');
+});

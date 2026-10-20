@@ -141,7 +141,7 @@ export async function createAgent(input: AgentConfig) {
       toolDetails: res.toolDetails.map(detail => ({
         ...detail,
         enabled: res.switches.enabled(detail.name),
-        alwaysAllow: detail.needsApproval && !res.switches.pauses(detail.name),
+        alwaysAllow: detail.needsApproval && res.switches.allowed(detail.name),
       })),
       toolSettings: res.switches.settings,
       mcp: mcp.servers,

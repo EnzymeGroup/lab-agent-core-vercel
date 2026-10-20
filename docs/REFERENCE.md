@@ -56,7 +56,7 @@ export default defineAgent(({ root, env }) => config) // factory; env = project 
 | `sessions.load / list / create` | Read or create sessions. |
 | `skills.list()`, `skills.read(name)` | Discovered Skills; full `SKILL.md` text. Reading never marks a Skill as loaded. |
 | `memory.list()`, `memory.read(name)`, `memory.forget(name)` | Project memory entries `{ name, description, type, content, updatedAt }`. |
-| `tools.settings()`, `tools.update({ name, enabled?, alwaysAllow? })` | Project tool switches `{ disabled, alwaysAllow }`. `enabled: false` removes a tool from the model's active tools (a call to it is refused, never run). `alwaysAllow` applies only to tools in `approval` and stops them pausing. Changed under the project lock; applies from the next model call. |
+| `tools.settings()`, `tools.update({ name, enabled?, alwaysAllow? })` | Project tool switches `{ disabled, alwaysAllow }`. `enabled: false` removes a tool from the model's active tools (a call to it is refused, never run). `alwaysAllow` applies only to tools that need approval (listed in `approval` or declaring `needsApproval`) and stops them pausing. Changed under the project lock; applies from the next model call. |
 | `mcp.list / test / add / remove` | Config and project MCP servers. `test` connects once and lists tools; `add`/`remove` change project HTTP servers under the project lock and reconnect. |
 | `cancel()` | Aborts the active operation → `boolean`. |
 | `recover()` | Marks crash leftovers as interrupted; never replays tools. |
@@ -171,9 +171,9 @@ Each run records the Core and AI SDK versions; SHA-256 of the frozen inputs (≤
 
 ## Harness behavior
 
-Approval. Tools matching `approval` use the AI SDK's native `toolApproval`. The turn ends with the call in state `approval-requested`; the session becomes `awaiting_approval` and new messages are refused until every pending call is answered. The decision is written onto the stored part and the same assistant message continues. Only the server's own pending calls can be answered. Helpers never receive tools that need approval.
+Approval. A tool needs approval when it matches `approval` or declares the AI SDK's `needsApproval` itself (`true`, or a function of its input decided per call). Core applies both through the native `toolApproval` hook. The turn ends with the call in state `approval-requested`; the session becomes `awaiting_approval` and new messages are refused until every pending call is answered. The decision is written onto the stored part and the same assistant message continues. Only the server's own pending calls can be answered. Helpers never receive tools that need approval.
 
-Tool switches. `.lab-agent/tools.json` turns a tool off for the model (`activeTools` leaves it out for the main agent and helpers; the SDK refuses a call to it before approval or execution) or marks a tool from `approval` as always allowed. The config stays the ceiling: a switch can remove a tool or skip its pause, never add a tool. The workbench approval card's "Always allow" sets the switch, then approves.
+Tool switches. `.lab-agent/tools.json` turns a tool off for the model (`activeTools` leaves it out for the main agent and helpers; the SDK refuses a call to it before approval or execution) or marks a tool that needs approval as always allowed. The config stays the ceiling: a switch can remove a tool or skip its pause, never add a tool. The workbench approval card's "Always allow" sets the switch, then approves.
 
 Attachments. A user message may carry images or PDFs. History stores only a reference (`url: "project:<path>"`); each model call reads the bytes through the file policy, so secrets stay unreadable and sessions stay small. A file that later disappears or becomes denied is replaced by a note. File bytes do not count toward `maxContextChars`; provider token limits still apply.
 

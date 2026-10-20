@@ -45,7 +45,25 @@ const repairToolName: ToolCallRepairFunction<ToolSet> = async ({ toolCall, tools
   return toolName ? { ...toolCall, toolName } : null;
 };
 
-function createNativeAgent(config: AgentConfig, instructions: string, skills: readonly Skill[], tools: ToolSet, switches: ToolSwitches) {
+type NeedsApproval = (input: unknown, options: { toolCallId: string; messages: unknown[]; context: unknown }) => boolean | PromiseLike<boolean>;
+
+/** Listed in config.approval, or the tool declares needsApproval (true or a function of its input). */
+function approvalRule(config: AgentConfig, tools: ToolSet) {
+  const listed = approvalMatcher(config.approval);
+  const own = (name: string) => (Object.hasOwn(tools, name) ? tools[name].needsApproval : undefined) as boolean | NeedsApproval | undefined;
+  return {
+    /** Static: may this tool ever pause? Used for helpers, Capabilities and alwaysAllow. */
+    needsApproval: (name: string) => listed(name) || (own(name) != null && own(name) !== false),
+    /** Per call. The SDK ignores a tool's own needsApproval once toolApproval is a function, so Core applies it here. */
+    async pauses(name: string, input: unknown, toolCallId: string, messages: unknown[]): Promise<boolean> {
+      if (listed(name)) return true;
+      const rule = own(name);
+      return typeof rule === 'function' ? !!await rule(input, { toolCallId, messages, context: undefined }) : !!rule;
+    },
+  };
+}
+
+function createNativeAgent(config: AgentConfig, instructions: string, skills: readonly Skill[], tools: ToolSet, switches: ToolSwitches, rule: ReturnType<typeof approvalRule>) {
   const { maxSteps, maxContextChars, maxRetries } = limitsOf(config);
   return new ToolLoopAgent({
     model: config.model,
@@ -55,7 +73,8 @@ function createNativeAgent(config: AgentConfig, instructions: string, skills: re
     stopWhen: [isStepCount(maxSteps), () => getExecutionContext()?.overBudget?.() ?? false],
     // Read at call time, so alwaysAllow applies from the next call. Disabled tools leave activeTools below;
     // the SDK refuses a call to them before approval or execution.
-    toolApproval: ({ toolCall }) => switches.pauses(toolCall.toolName) ? 'user-approval' : 'not-applicable',
+    toolApproval: async ({ toolCall, messages }) => !switches.allowed(toolCall.toolName) && await rule.pauses(toolCall.toolName, toolCall.input, toolCall.toolCallId, messages)
+      ? 'user-approval' : 'not-applicable',
     repairToolCall: repairToolName,
     telemetry: config.telemetry,
     // Core bounds the context before and after the application's own prepareStep, and
@@ -88,7 +107,8 @@ async function connectTools(config: AgentConfig, workspace: Workspace, skills: r
   const mcp = await connectMcp(servers, { cwd: config.root, env: config.env });
   try {
     const tools = createTools(workspace, config, skills, mcp.tools);
-    const needsApproval = approvalMatcher(config.approval);
+    const rule = approvalRule(config, tools);
+    const { needsApproval } = rule;
     if (config.subagents && Object.keys(config.subagents).length) {
       if (Object.hasOwn(tools, 'runSubagent')) throw new Error('Duplicate tool name: runSubagent');
       const rules = systemInstructions('', [], config.fileAccess);
@@ -96,7 +116,7 @@ async function connectTools(config: AgentConfig, workspace: Workspace, skills: r
       tools.runSubagent = guardTool(subagentTool(config, helperTools(config, tools, needsApproval), rules, switches) as Tool, maxBytes);
     }
     const toolDetails = (await describeTools(tools)).map(detail => ({ ...detail, needsApproval: needsApproval(detail.name) }));
-    return { mcp, tools, toolDetails, needsApproval, native: createNativeAgent(config, instructions, skills, tools, switches) };
+    return { mcp, tools, toolDetails, needsApproval, native: createNativeAgent(config, instructions, skills, tools, switches, rule) };
   } catch (error) {
     await mcp.close();
     throw error;
@@ -118,7 +138,7 @@ export async function assembleAgent(input: AgentConfig) {
   const instructions = await readInstructions(config);
   const sessions = createSessionStore(root);
   const runs = createRunStore(config);
-  const switches = toolSwitches(await readToolSettings(root), approvalMatcher(config.approval));
+  const switches = toolSwitches(await readToolSettings(root));
   const res = {
     config, root, workspace, skills, sessions, runs, switches,
     ...(await connectTools(config, workspace, skills, instructions, switches)),

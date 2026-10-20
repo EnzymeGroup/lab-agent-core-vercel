@@ -39,6 +39,10 @@ Added:
 - Uploads and previews accept `.yaml`, `.yml` and `.log`.
 - `acquireOperation`, `lockOwner`, `RunError`, `SessionCompatibilityError`, `describeTools`, `pythonToolAllowed` and `templates` are public exports.
 
+Fixed:
+
+- A tool's own AI SDK `needsApproval` (`true` or a function of its input) pauses the turn again. Core's per-call `toolApproval` function had replaced it, so such tools ran without asking unless they were also listed in `approval`. These tools now also count as needing approval for helpers, Capabilities and `alwaysAllow`.
+
 Changed:
 
 - Workbench redesigned as an agent workspace with Tailwind CSS v4 and shadcn-style components: tool calls and reasoning shown as a step timeline, an activity bar with the current step, a docked composer, starter prompts, Execute → Check → Deliver run progress and Markdown replies. The look is flat and neutral (no gradients, glows, blur or decorative motion); `ui.accent` only colors primary buttons and the focus ring.
