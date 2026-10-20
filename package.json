@@ -8,13 +8,15 @@
   "scripts": {
     "build:core": "npm run build -w lab-agent-core-vercel",
     "build:web": "npm run build -w @lab-agent/workbench && node scripts/bundle-web.mjs",
-    "build": "npm run build:core && npm run build:web",
-    "typecheck": "npm run typecheck -w lab-agent-core-vercel && npm run typecheck -w @lab-agent/workbench",
+    "build:extras": "npm run build -w lab-agent-extras",
+    "build": "npm run build:core && npm run build:extras && npm run build:web",
+    "typecheck": "npm run typecheck -w lab-agent-core-vercel && npm run typecheck -w lab-agent-extras && npm run typecheck -w @lab-agent/workbench",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:extras": "node --test --test-concurrency=1 tests/extras/*.test.mjs",
     "test:consumers": "node --test --test-concurrency=1 tests/consumers/*.test.mjs",
     "test:browser": "playwright test",
     "test:live": "node --env-file-if-exists=.env scripts/live-smoke.mjs",
-    "verify": "npm run typecheck && npm run build && npm test && npm run test:consumers && node scripts/check-docs.mjs",
+    "verify": "npm run typecheck && npm run build && npm test && npm run test:extras && npm run test:consumers && node scripts/check-docs.mjs",
     "demo": "node scripts/demo.mjs",
     "pack:core": "node scripts/pack-core.mjs"
   },

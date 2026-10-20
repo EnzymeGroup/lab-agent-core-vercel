@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 // Checks local links, unfinished placeholders, required contract terms and evidence limits.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const evidence = (await readdir(path.join(root, 'docs/evidence'))).filter(name => name.endsWith('.md')).map(name => `docs/evidence/${name}`);
-const files = ['README.md', 'AGENTS.md', 'docs/GUIDE.md', 'docs/REFERENCE.md', 'docs/ARCHITECTURE.md', 'docs/CHANGELOG.md', ...evidence];
+const files = ['README.md', 'AGENTS.md', 'docs/GUIDE.md', 'docs/REFERENCE.md', 'docs/ARCHITECTURE.md', 'docs/CHANGELOG.md', 'docs/EXTRAS.md', ...evidence];
 const issues = [];
 
 for (const file of files) {

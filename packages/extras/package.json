@@ -1,0 +1,34 @@
+{
+  "name": "lab-agent-extras",
+  "version": "0.1.0-rc.3",
+  "description": "Opt-in tools for lab-agent-core-vercel: web search and fetch, HPC jobs, bioinformatics databases, file inspection, environments, research and coding",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "ai": "7.0.142",
+    "lab-agent-core-vercel": "0.1.0-rc.3",
+    "zod": "4.6.7"
+  }
+}
